@@ -1,7 +1,7 @@
 //! RustERP gRPC server binary.
 //!
 //! Serves `rusterp.party.v1.PartyService` and `rusterp.platform.v1.HealthService`
-//! with an **in-memory** party store. **Auth is not enforced.**
+//! with a **SQLite-backed** party store. **Auth is not enforced.**
 //!
 //! **Dual transport:**
 //! - TCP gRPC on `RUSTERP_LISTEN` (default `127.0.0.1:50051`) — grpcurl / API tools.
@@ -15,11 +15,12 @@ mod http;
 mod port_guard;
 
 use std::process;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rusterp_server::{
-    build_grpc_routes, build_router, new_shared_repo, parse_listen_from_args, LISTEN_ENV,
+    build_grpc_routes, build_router, new_shared_repo, parse_listen_from_args, SharedRepo, LISTEN_ENV,
 };
+use rusterp_parties::SqlitePartyRepository;
 use rusterp_storage::from_config;
 use tokio_util::sync::CancellationToken;
 
@@ -101,11 +102,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     write_pid_file(&pid_path, process::id())?;
 
     let storage_cfg = file_cfg.resolve_storage_config();
-    let storage: Arc<dyn rusterp_storage::Storage> = Arc::from(from_config(&storage_cfg)?);
-    tracing::info!("storage backend: {}", storage.backend_kind());
     storage_cfg.warn_if_no_litestream();
 
-    let repo = new_shared_repo();
+    // Determine the storage backend and construct the party repository
+    // accordingly. SQLite: create storage, run migrations, build
+    // SqlitePartyRepository. Postgres is out of scope for this Spec so
+    // we fall back to in-memory parties with a warning.
+    let (storage, repo):
+        (Arc<dyn rusterp_storage::Storage>, SharedRepo)
+        = if storage_cfg.backend == rusterp_storage::BackendKind::Sqlite {
+            let backend = rusterp_storage::SqliteStorage::new(&storage_cfg.sqlite_path)?;
+            let conn = backend.conn_handle();
+            {
+                let guard = conn.lock().map_err(|e| {
+                    format!("sqlite lock poisoned: {e}")
+                })?;
+                rusterp_storage::run_migrations(&guard).map_err(|e| {
+                    format!("migrations failed: {e}")
+                })?;
+            }
+            tracing::info!(
+                "storage backend: sqlite (SQLite-backed parties)"
+            );
+            let parties_repo = Arc::new(Mutex::new(SqlitePartyRepository::new(conn)));
+            (Arc::from(backend) as Arc<dyn rusterp_storage::Storage>, parties_repo)
+        } else {
+            let backend = from_config(&storage_cfg)?;
+            tracing::warn!(
+                "Postgres storage: parties are in-memory (SQLite parties are the \
+                 active path; Postgres parties are out of scope for this Spec)"
+            );
+            (Arc::from(backend), new_shared_repo())
+        };
+
     let tcp_router = build_router(storage.clone(), repo.clone())?;
     let grpc_routes = build_grpc_routes(storage, repo)?;
 

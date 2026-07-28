@@ -83,39 +83,35 @@ impl std::error::Error for StorageError {}
 // SQLite backend (rusqlite, bundled)
 // ---------------------------------------------------------------------------
 
-struct SqliteInner {
-    conn: Option<rusqlite::Connection>,
-}
-
 /// SQLite storage backend using `rusqlite` with the `"bundled"` feature.
+///
+/// Holds the underlying `rusqlite::Connection` inside `Arc<Mutex<>>` so that
+/// other components (migrations, domain repositories) can share the same
+/// connection.
 #[derive(Clone)]
 pub struct SqliteStorage {
-    path: String,
-    inner: Arc<Mutex<SqliteInner>>,
+    conn: Arc<Mutex<rusqlite::Connection>>,
 }
 
 impl SqliteStorage {
-    /// Create a SQLite storage handle. The connection is lazy.
-    pub fn new(path: impl Into<String>) -> Self {
-        Self {
-            path: path.into(),
-            inner: Arc::new(Mutex::new(SqliteInner { conn: None })),
-        }
-    }
-
-    fn ensure_connection(&self) -> Result<(), StorageError> {
-        let mut guard = self.inner.lock().map_err(|e| {
-            StorageError::new(format!("sqlite lock poisoned: {e}"))
-        })?;
-        if guard.conn.is_some() {
-            return Ok(());
-        }
-        let conn = rusqlite::Connection::open(&self.path)
+    /// Create a SQLite storage handle. The connection is opened eagerly.
+    pub fn new(path: impl Into<String>) -> Result<Self, StorageError> {
+        let path = path.into();
+        let conn = rusqlite::Connection::open(&path)
             .map_err(|e| StorageError::new(format!("failed to open SQLite DB: {e}")))?;
         conn.execute("PRAGMA journal_mode=WAL", [])
             .ok(); // non-fatal
-        guard.conn = Some(conn);
-        Ok(())
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+        })
+    }
+
+    /// Return a shared handle to the underlying connection.
+    ///
+    /// The caller can clone this `Arc<Mutex<>>` and pass it to other
+    /// components (e.g. a domain-specific repository).
+    pub fn conn_handle(&self) -> Arc<Mutex<rusqlite::Connection>> {
+        self.conn.clone()
     }
 }
 
@@ -125,14 +121,10 @@ impl Storage for SqliteStorage {
     }
 
     fn ping(&self) -> Result<(), StorageError> {
-        self.ensure_connection()?;
-        let guard = self.inner.lock().map_err(|e| {
+        let guard = self.conn.lock().map_err(|e| {
             StorageError::new(format!("sqlite lock poisoned: {e}"))
         })?;
-        let conn = guard.conn.as_ref().ok_or_else(|| {
-            StorageError::new("connection was None after ensure_connection")
-        })?;
-        conn.query_row("SELECT 1", [], |_| Ok(()))
+        guard.query_row("SELECT 1", [], |_| Ok(()))
             .map_err(|e| StorageError::new(format!("sqlite ping failed: {e}")))
     }
 }
@@ -287,7 +279,7 @@ impl StorageConfig {
 pub fn from_config(cfg: &StorageConfig) -> Result<Box<dyn Storage>, StorageError> {
     match cfg.backend {
         BackendKind::Sqlite => {
-            let backend = SqliteStorage::new(&cfg.sqlite_path);
+            let backend = SqliteStorage::new(&cfg.sqlite_path)?;
             Ok(Box::new(backend))
         }
         BackendKind::Postgres => {
@@ -298,6 +290,50 @@ pub fn from_config(cfg: &StorageConfig) -> Result<Box<dyn Storage>, StorageError
             Ok(Box::new(backend))
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Schema migrations
+// ---------------------------------------------------------------------------
+
+/// Run schema migrations on the SQLite connection.
+///
+/// Creates the three tables used by the Parties domain if they do not exist.
+pub fn run_migrations(conn: &rusqlite::Connection) -> Result<(), StorageError> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS parties (
+            id TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1
+        )",
+        [],
+    )
+    .map_err(|e| StorageError::new(format!("parties table creation: {e}")))?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS party_roles (
+            party_id TEXT NOT NULL REFERENCES parties(id),
+            role TEXT NOT NULL,
+            PRIMARY KEY(party_id, role)
+        )",
+        [],
+    )
+    .map_err(|e| StorageError::new(format!("party_roles table creation: {e}")))?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS contacts (
+            id TEXT PRIMARY KEY,
+            party_id TEXT NOT NULL REFERENCES parties(id),
+            name TEXT NOT NULL,
+            email TEXT,
+            phone TEXT
+        )",
+        [],
+    )
+    .map_err(|e| StorageError::new(format!("contacts table creation: {e}")))?;
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -348,7 +384,7 @@ mod tests {
     fn sqlite_backend_and_ping() {
         let tmp = tempfile::TempDir::new().unwrap();
         let path = tmp.path().join("test.db");
-        let storage = SqliteStorage::new(path.to_str().unwrap());
+        let storage = SqliteStorage::new(path.to_str().unwrap()).unwrap();
 
         assert_eq!(storage.backend_kind(), BackendKind::Sqlite);
         assert!(storage.ping().is_ok());
@@ -356,8 +392,58 @@ mod tests {
 
     #[test]
     fn sqlite_backend_kind() {
-        let db = SqliteStorage::new("sqlitetest.db");
+        let db = SqliteStorage::new("sqlitetest.db").unwrap();
         assert_eq!(db.backend_kind(), BackendKind::Sqlite);
+    }
+
+    #[test]
+    fn run_migrations_creates_tables() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("migration_test.db");
+        let storage = SqliteStorage::new(path.to_str().unwrap()).unwrap();
+        let conn = storage.conn_handle();
+        let guard = conn.lock().unwrap();
+
+        assert!(run_migrations(&guard).is_ok());
+
+        let tables: Vec<String> = guard
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+            .unwrap()
+            .query_map(["parties"], |r| r.get(0))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        assert!(tables.contains(&"parties".into()));
+
+        let tables: Vec<String> = guard
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+            .unwrap()
+            .query_map(["party_roles"], |r| r.get(0))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        assert!(tables.contains(&"party_roles".into()));
+
+        let tables: Vec<String> = guard
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+            .unwrap()
+            .query_map(["contacts"], |r| r.get(0))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        assert!(tables.contains(&"contacts".into()));
+    }
+
+    #[test]
+    fn run_migrations_is_idempotent() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("migration_idempotent.db");
+        let storage = SqliteStorage::new(path.to_str().unwrap()).unwrap();
+        let conn = storage.conn_handle();
+        let guard = conn.lock().unwrap();
+
+        assert!(run_migrations(&guard).is_ok());
+        assert!(run_migrations(&guard).is_ok());
     }
 
     #[test]

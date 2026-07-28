@@ -1,9 +1,9 @@
-//! RustERP gRPC server library: service wiring over in-memory Parties state.
+//! RustERP gRPC server library: service wiring over parties state.
 //!
 //! # Runtime
 //!
-//! Async stack is **tokio** + **tonic**. Persistence remains
-//! [`rusterp_parties::InMemoryPartyRepository`] (not durable). **Auth is not
+//! Async stack is **tokio** + **tonic**. Persistence uses
+//! [`rusterp_parties::SqlitePartyRepository`] (durable via SQLite). **Auth is not
 //! enforced.**
 //!
 //! # Listen address
@@ -16,8 +16,8 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use rusterp_parties::{
-    Contact as DomainContact, InMemoryPartyRepository, NewContact, NewParty, Party as DomainParty,
-    PartyError, PartyRepository, PartyRole as DomainRole, PartyUpdate,
+    Contact as DomainContact, InMemoryPartyRepository, NewContact, NewParty,
+    Party as DomainParty, PartyError, PartyRepository, PartyRole as DomainRole, PartyUpdate,
 };
 use rusterp_storage::Storage;
 use rusterp_proto::party::v1::party_service_server::PartyService;
@@ -37,8 +37,10 @@ pub const DEFAULT_LISTEN: &str = "127.0.0.1:50051";
 /// Environment variable for listen override (CLI `--listen` takes precedence).
 pub const LISTEN_ENV: &str = "RUSTERP_LISTEN";
 
-/// Shared in-process party store.
-pub type SharedRepo = Arc<Mutex<InMemoryPartyRepository>>;
+/// Shared in-process party store — backed by a trait object so the
+/// concrete repository (in-memory or SQLite) can be swapped without
+/// changing the service wiring.
+pub type SharedRepo = Arc<Mutex<dyn PartyRepository>>;
 
 /// Resolve listen address: `cli_override` → `RUSTERP_LISTEN` → [`DEFAULT_LISTEN`].
 pub fn resolve_listen_addr(cli_override: Option<&str>) -> Result<SocketAddr, String> {
@@ -140,8 +142,8 @@ fn contact_to_proto(c: DomainContact) -> Contact {
     }
 }
 
-/// gRPC `PartyService` backed by [`InMemoryPartyRepository`].
-#[derive(Debug, Clone)]
+/// gRPC `PartyService` backed by a [`PartyRepository`].
+#[derive(Clone)]
 pub struct PartySvc {
     repo: SharedRepo,
 }
@@ -313,7 +315,7 @@ pub fn build_router(storage: Arc<dyn Storage>, repo: SharedRepo) -> Result<tonic
     Ok(router)
 }
 
-/// Create a fresh shared in-memory repository.
+/// Create a fresh shared repository backed by in-memory storage (for tests).
 pub fn new_shared_repo() -> SharedRepo {
     Arc::new(Mutex::new(InMemoryPartyRepository::new()))
 }
@@ -467,6 +469,6 @@ mod tests {
 
     fn build_memory_storage() -> Arc<dyn Storage> {
         use rusterp_storage::SqliteStorage;
-        Arc::new(SqliteStorage::new(":memory:"))
+        Arc::new(SqliteStorage::new(":memory:").unwrap())
     }
 }

@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 rusterp-parties = { path = "../rusterp-parties" }
 rusterp-proto = { path = "../rusterp-proto" }
+rusterp-storage = { path = "../rusterp-storage" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
 slozhn = { workspace = true, features = ["server"] }

@@ -1242,6 +1242,7 @@ version = "0.1.0"
 name = "rusterp-parties"
 version = "0.1.0"
 dependencies = [
+ "rusqlite",
  "rusterp-modules",
  "uuid",
 ]
