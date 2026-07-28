@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>RustERP Reference UI</title>
+
+    <!-- Agent Hints: Technical requirements and details for debugging agents -->
+    <script type="application/agent-hints+json">
+    {
+      "project": "RustERP Reference UI",
+      "technical_requirements": {
+        "webassembly": "Required (wasm32)",
+        "graphics_api": "WebGL 2 or WebGPU required (WebGL 1 is insufficient for egui/eframe)",
+        "browser_features": ["WebSockets", "WebAssembly", "WebGL 2"],
+        "privacy_compatibility": {
+          "librewolf": "WebGL/Canvas is blocked by default. User must allow canvas fingerprinting permission via the address bar warning/canvas icon, and possibly bypass driver blocklists on Linux (webgl.ignore-blocklist=true, webgl.force-enabled=true) or run native client.",
+          "brave": "Set shield settings to allow WebGL fingerprints."
+        }
+      },
+      "network_requirements": {
+        "protocol": "gRPC-over-WebSocket (slozhn)",
+        "ws_endpoint_pattern": "ws[s]://<host>/rpc",
+        "default_rpc_url": "ws://127.0.0.1:8123/rpc"
+      },
+      "dom_elements": {
+        "canvas": "#the_canvas_id",
+        "status_overlay": "#loading"
+      },
+      "diagnostics": {
+        "troubleshooting_steps": [
+          "Check address bar for canvas read/write block icon and select 'Allow'",
+          "Check developer console for eframe initialization errors",
+          "Verify that WebGL 2 context creation succeeds: canvas.getContext('webgl2') != null",
+          "Check server logs for WS connection handshakes at /rpc"
+        ]
+      }
+    }
+    </script>
+
+    
+<script type="module">
+import init, * as bindings from '/rusterp-ui.js';
+const wasm = await init({ module_or_path: '/rusterp-ui_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+    <base href="/" />
+
+    <style>
+      html {
+        touch-action: manipulation;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #0f1115;
+        color: #e6e6e6;
+        font-family: system-ui, sans-serif;
+        overflow: hidden;
+      }
+      canvas {
+        position: fixed;
+        inset: 0;
+        width: 100% !important;
+        height: 100% !important;
+        outline: none;
+      }
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        opacity: 0.85;
+        z-index: 1;
+      }
+    </style>
+  <link rel="modulepreload" href="/rusterp-ui.js" crossorigin="anonymous" integrity="sha384-Gryze9cHabVK7tQ1cpi4P95sI2ePL0rViWlS6FmGIe33C0GTELm+/vFzt9PK2+vQ"><link rel="preload" href="/rusterp-ui_bg.wasm" crossorigin="anonymous" integrity="sha384-NCj6/7xPi+nvZvqEKSRqyZb1ozbqjC9CXRLDBBvlGVWbbXYNaYcbHJ2BwpvdB7ik" as="fetch" type="application/wasm"></head>
+  <body>
+    <div id="loading">
+      <noscript>You need JavaScript to use this reference UI.</noscript>
+      Loading RustERP reference UI…
+    </div>
+    <canvas id="the_canvas_id"></canvas>
+  </body>
+</html>

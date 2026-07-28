@@ -1,0 +1,11 @@
+[package]
+name = "rusterp-modules"
+description = "Functional module registry and activation for RustERP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]

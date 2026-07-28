@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "phase": "Accepted",
+  "role": "reviewer",
+  "changeId": "chg-2026-07-27T15-30-13-948Z-afc57a",
+  "specPath": ".nucleus/specs/current.md",
+  "attestationIds": [
+    "att-2026-07-27T16-10-08-671Z-ffdece8e",
+    "att-2026-07-27T16-10-09-308Z-3dbdb875",
+    "att-2026-07-27T16-10-10-011Z-49674442"
+  ],
+  "reviewResult": {
+    "verdict": "pass",
+    "findings": [
+      "No blocking findings recorded"
+    ],
+    "reviewedAt": "2026-07-27T16:16:05.401Z"
+  },
+  "overrideReason": null,
+  "notes": [],
+  "createdAt": "2026-07-27T11:34:59.283Z",
+  "updatedAt": "2026-07-27T16:16:05.403Z"
+}

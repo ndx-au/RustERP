@@ -1,0 +1,33 @@
+{"ts":"2026-07-27T11:52:17.407Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"SpecDraft","event":"migrated_note","note":"spec draft started"}
+{"ts":"2026-07-27T12:13:27.500Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"SpecApproved","event":"migrated_note","note":"human approved spec"}
+{"ts":"2026-07-27T12:14:33.212Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Implementing","event":"migrated_note","note":"implement started"}
+{"ts":"2026-07-27T12:15:28.370Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Attested","event":"migrated_note","note":"recorded att-2026-07-27T12-15-28-363Z-0177d32a"}
+{"ts":"2026-07-27T12:50:44.873Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Review","event":"migrated_note","note":"adversarial PASS with gitignore Spec delta"}
+{"ts":"2026-07-27T13:00:00.000Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Accepted","event":"migrated_note","note":"Phase 0 Foundations accepted by human (/accept); gitignore override recorded"}
+{"ts":"2026-07-27T13:00:01.000Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"SpecDraft","event":"migrated_note","note":"Phase 1 Parties domain spec draft started"}
+{"ts":"2026-07-27T13:42:59.694Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"SpecApproved","event":"migrated_note","note":"human approved spec"}
+{"ts":"2026-07-27T14:20:47.403Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Implementing","event":"transition","note":"implement started","fromPhase":"SpecApproved","toPhase":"Implementing"}
+{"ts":"2026-07-27T14:21:51.953Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Attested","event":"attestation","note":"recorded att-2026-07-27T14-21-51-951Z-d07d5068","attestationId":"att-2026-07-27T14-21-51-951Z-d07d5068"}
+{"ts":"2026-07-27T14:21:56.057Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Attested","event":"attestation","note":"recorded att-2026-07-27T14-21-56-057Z-802e2592","attestationId":"att-2026-07-27T14-21-56-057Z-802e2592"}
+{"ts":"2026-07-27T14:29:27.336Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Attested","event":"attestation","note":"recorded att-2026-07-27T14-29-27-333Z-0190f47a","attestationId":"att-2026-07-27T14-29-27-333Z-0190f47a"}
+{"ts":"2026-07-27T14:51:40.267Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Reviewing","event":"transition","note":"adversarial review started (Phase 2.0 isolation)","fromPhase":"Attested","toPhase":"Reviewing"}
+{"ts":"2026-07-27T14:52:58.031Z","changeId":"chg-2026-07-27T13-00-00-phase1-parties","phase":"Accepted","event":"transition","note":"review pass","fromPhase":"Reviewing","toPhase":"Accepted"}
+{"ts":"2026-07-27T15:00:17.640Z","changeId":null,"phase":"idle","event":"transition","note":"new change after terminal phase","fromPhase":"Accepted","toPhase":"idle"}
+{"ts":"2026-07-27T15:00:17.643Z","changeId":"chg-2026-07-27T15-00-17-641Z-bb3fef","phase":"SpecDraft","event":"change_boundary","note":"new change (previous: none)"}
+{"ts":"2026-07-27T15:00:17.643Z","changeId":"chg-2026-07-27T15-00-17-641Z-bb3fef","phase":"SpecDraft","event":"transition","note":"spec draft started","fromPhase":"idle","toPhase":"SpecDraft"}
+{"ts":"2026-07-27T15:14:01.183Z","changeId":"chg-2026-07-27T15-00-17-641Z-bb3fef","phase":"SpecApproved","event":"transition","note":"human approved spec","fromPhase":"SpecDraft","toPhase":"SpecApproved"}
+{"ts":"2026-07-27T15:14:52.559Z","changeId":"chg-2026-07-27T15-00-17-641Z-bb3fef","phase":"Implementing","event":"transition","note":"implement started","fromPhase":"SpecApproved","toPhase":"Implementing"}
+{"ts":"2026-07-27T15:18:02.760Z","changeId":"chg-2026-07-27T15-00-17-641Z-bb3fef","phase":"Attested","event":"attestation","note":"recorded att-2026-07-27T15-18-02-756Z-4bdbaef6","attestationId":"att-2026-07-27T15-18-02-756Z-4bdbaef6"}
+{"ts":"2026-07-27T15:18:06.239Z","changeId":"chg-2026-07-27T15-00-17-641Z-bb3fef","phase":"Attested","event":"attestation","note":"recorded att-2026-07-27T15-18-06-237Z-6d9beb12","attestationId":"att-2026-07-27T15-18-06-237Z-6d9beb12"}
+{"ts":"2026-07-27T15:19:24.916Z","changeId":"chg-2026-07-27T15-00-17-641Z-bb3fef","phase":"Reviewing","event":"transition","note":"adversarial review started (Phase 2.0 isolation)","fromPhase":"Attested","toPhase":"Reviewing"}
+{"ts":"2026-07-27T15:23:19.098Z","changeId":"chg-2026-07-27T15-00-17-641Z-bb3fef","phase":"Accepted","event":"transition","note":"review pass","fromPhase":"Reviewing","toPhase":"Accepted"}
+{"ts":"2026-07-27T15:30:13.948Z","changeId":null,"phase":"idle","event":"transition","note":"new change after terminal phase","fromPhase":"Accepted","toPhase":"idle"}
+{"ts":"2026-07-27T15:30:13.949Z","changeId":"chg-2026-07-27T15-30-13-948Z-afc57a","phase":"SpecDraft","event":"change_boundary","note":"new change (previous: none)"}
+{"ts":"2026-07-27T15:30:13.949Z","changeId":"chg-2026-07-27T15-30-13-948Z-afc57a","phase":"SpecDraft","event":"transition","note":"spec draft started","fromPhase":"idle","toPhase":"SpecDraft"}
+{"ts":"2026-07-27T16:06:17.243Z","changeId":"chg-2026-07-27T15-30-13-948Z-afc57a","phase":"SpecApproved","event":"transition","note":"human approved spec","fromPhase":"SpecDraft","toPhase":"SpecApproved"}
+{"ts":"2026-07-27T16:06:24.228Z","changeId":"chg-2026-07-27T15-30-13-948Z-afc57a","phase":"Implementing","event":"transition","note":"implement started","fromPhase":"SpecApproved","toPhase":"Implementing"}
+{"ts":"2026-07-27T16:10:08.674Z","changeId":"chg-2026-07-27T15-30-13-948Z-afc57a","phase":"Attested","event":"attestation","note":"recorded att-2026-07-27T16-10-08-671Z-ffdece8e","attestationId":"att-2026-07-27T16-10-08-671Z-ffdece8e"}
+{"ts":"2026-07-27T16:10:09.310Z","changeId":"chg-2026-07-27T15-30-13-948Z-afc57a","phase":"Attested","event":"attestation","note":"recorded att-2026-07-27T16-10-09-308Z-3dbdb875","attestationId":"att-2026-07-27T16-10-09-308Z-3dbdb875"}
+{"ts":"2026-07-27T16:10:10.013Z","changeId":"chg-2026-07-27T15-30-13-948Z-afc57a","phase":"Attested","event":"attestation","note":"recorded att-2026-07-27T16-10-10-011Z-49674442","attestationId":"att-2026-07-27T16-10-10-011Z-49674442"}
+{"ts":"2026-07-27T16:11:09.124Z","changeId":"chg-2026-07-27T15-30-13-948Z-afc57a","phase":"Reviewing","event":"transition","note":"adversarial review started (Phase 2.0 isolation)","fromPhase":"Attested","toPhase":"Reviewing"}
+{"ts":"2026-07-27T16:16:05.402Z","changeId":"chg-2026-07-27T15-30-13-948Z-afc57a","phase":"Accepted","event":"transition","note":"review pass","fromPhase":"Reviewing","toPhase":"Accepted"}

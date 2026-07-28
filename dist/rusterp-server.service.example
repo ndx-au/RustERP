@@ -1,0 +1,23 @@
+# Minimal example systemd unit for RustERP core (Phase 3).
+# Not production-hardened. Auth is not enforced. Persistence is in-memory.
+#
+# Adjust User, paths, and EnvironmentFile for your host/LXC.
+# Install (example):
+#   sudo cp ~/.local/share/rusterp/rusterp-server.service.example \
+#     /etc/systemd/system/rusterp-server.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now rusterp-server
+
+[Unit]
+Description=RustERP core gRPC server (in-memory)
+After=network.target
+
+[Service]
+Type=simple
+# User=rusterp
+Environment=RUSTERP_LISTEN=127.0.0.1:50051
+# EnvironmentFile=-/etc/rusterp/core.env
+ExecStart=%h/.local/share/rusterp/bin/run-core
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rusterp-storage",
+    "crates/rusterp-modules",
+    "crates/rusterp-parties",
+    "crates/rusterp-proto",
+    "crates/rusterp-server",
+]
+# Future domain crates (not members until implemented), e.g.:
+# crates/rusterp-catalog, crates/rusterp-sales,
+# crates/rusterp-payments, crates/rusterp-inventory
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/ndx-video/RustERP"
+homepage = "https://RustERP.biz"
+authors = ["NDX Pty Ltd and contributors"]
+
+[workspace.dependencies]
+tonic = { version = "0.14", default-features = false }
+prost = "0.14"
+tokio = { version = "1", default-features = false }
+tokio-util = { version = "0.7", default-features = false }
+slozhn = { version = "1.1", default-features = false }
+axum = { version = "0.8", default-features = false }
+tower-http = { version = "0.6", default-features = false }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false }
+tonic-reflection = "0.14"
+tonic-build = "0.14"
+tonic-prost-build = "0.14"
+tonic-prost = "0.14"

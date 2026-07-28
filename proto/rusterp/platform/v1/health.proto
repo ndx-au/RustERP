@@ -1,0 +1,19 @@
+// Copyright 2026 NDX Pty Ltd and contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Minimal platform health surface for gRPC liveness checks.
+
+syntax = "proto3";
+
+package rusterp.platform.v1;
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  // Typically "ok" when the process is serving.
+  string status = 1;
+}
+
+service HealthService {
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+}

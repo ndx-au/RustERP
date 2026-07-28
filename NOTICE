@@ -1,0 +1,23 @@
+RustERP by NDX Pty Ltd
+Copyright 2026 NDX Pty Ltd and contributors
+
+Official site: https://RustERP.biz
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file in the root of this repository for the full
+license text, or visit:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+---
+
+This product may include software developed by third parties and
+distributed under their own licenses. When dependencies are added
+(for example Rust crates recorded in Cargo.lock, or other libraries
+listed in project manifests), those components remain under their
+respective licenses; see each package’s crate page, license file, or
+source tree for details.
+
+If you redistribute RustERP binaries or source that incorporate
+third-party code, retain any required copyright notices and license
+texts for those components as required by their licenses.
