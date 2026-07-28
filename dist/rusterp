@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# Copyright 2026 NDX Pty Ltd and contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# RustERP distribution helper (Phase 3) — source-first core install.
+# Roles: core only in this phase (no ui-wasm).
+
+set -euo pipefail
+
+_RUSTERP_SELF="${BASH_SOURCE[0]:-$0}"
+# Resolve symlinks so lib loads when invoked via PATH wrappers/links.
+while [ -L "$_RUSTERP_SELF" ]; do
+  _link_dir="$(cd "$(dirname "$_RUSTERP_SELF")" && pwd)"
+  _RUSTERP_SELF="$(readlink "$_RUSTERP_SELF")"
+  case "$_RUSTERP_SELF" in
+    /*) ;;
+    *) _RUSTERP_SELF="${_link_dir}/${_RUSTERP_SELF}" ;;
+  esac
+done
+_RUSTERP_DIR="$(cd "$(dirname "$_RUSTERP_SELF")" && pwd)"
+
+# shellcheck source=rusterp-lib.sh
+. "${_RUSTERP_DIR}/rusterp-lib.sh"
+
+usage() {
+  cat <<EOF
+RustERP helper (source install; single-tenant core)
+
+Usage:
+  rusterp install core [--branch <name>]
+  rusterp status
+  rusterp help
+
+Commands:
+  install core   Fetch this repo at a git ref (default branch: ${RUSTERP_DEFAULT_CORE_BRANCH}),
+                 build rusterp-server --release, install under RUSTERP_HOME.
+  status         Show whether core is installed and basic paths.
+
+Environment:
+  RUSTERP_HOME       Install prefix (default: ~/.local/share/rusterp, or /opt/rusterp as root)
+  RUSTERP_BIN_DIR    CLI bin dir used by install.sh (default: ~/.local/bin or /usr/local/bin)
+  RUSTERP_REPO_URL   Git remote (default: https://github.com/ndx-video/RustERP.git)
+  RUSTERP_LISTEN     gRPC listen for run-core (default: 127.0.0.1:50051)
+
+Prerequisites for install core: git, cargo (stable Rust), protoc.
+Does not auto-install toolchains. Missing/unfetchable --branch fails closed (no main fallback).
+EOF
+}
+
+cmd_status() {
+  rusterp_core_paths
+  local present="no"
+  if [ -x "$SERVER_BIN" ]; then
+    present="yes"
+  fi
+  echo "role: core"
+  echo "present: ${present}"
+  echo "RUSTERP_HOME: ${RUSTERP_HOME_RESOLVED}"
+  echo "server_bin: ${SERVER_BIN}"
+  echo "run_script: ${RUN_SCRIPT}"
+  if [ -f "${STATE_DIR}/core.branch" ]; then
+    echo "branch: $(cat "${STATE_DIR}/core.branch")"
+  else
+    echo "branch: (unknown)"
+  fi
+  if [ -f "${STATE_DIR}/core.repo" ]; then
+    echo "repo: $(cat "${STATE_DIR}/core.repo")"
+  fi
+  echo "listen_hint: ${RUSTERP_LISTEN:-127.0.0.1:50051} (env RUSTERP_LISTEN)"
+  if [ "$present" = "yes" ]; then
+    echo "run: ${RUN_SCRIPT}"
+    echo "or:  ${SERVER_BIN} --listen ${RUSTERP_LISTEN:-127.0.0.1:50051}"
+  fi
+  echo "notes: persistence in-memory; auth not enforced; single-tenant"
+}
+
+cmd_install_core() {
+  local rc=0
+  rusterp_parse_install_core_args "$@" || rc=$?
+  if [ "$rc" -eq 2 ] || [ "${RUSTERP_PARSE_ERR:-}" = "help" ]; then
+    usage
+    return 0
+  fi
+  if [ "$rc" -ne 0 ]; then
+    rusterp_die "${RUSTERP_PARSE_ERR}"
+  fi
+
+  local branch="$RUSTERP_PARSE_BRANCH"
+  rusterp_require_build_tools || exit 1
+
+  rusterp_core_paths
+  mkdir -p "$BIN_DIR" "$STATE_DIR"
+
+  rusterp_info "install core (branch=${branch}, home=${RUSTERP_HOME_RESOLVED})"
+
+  if [ -d "${SRC_DIR}/.git" ]; then
+    rusterp_info "updating existing clone at ${SRC_DIR}"
+    git -C "$SRC_DIR" remote set-url origin "$RUSTERP_REPO_URL" 2>/dev/null || true
+    # Fail-closed: do not fall back to main.
+    if ! git -C "$SRC_DIR" fetch --depth 1 origin "$branch"; then
+      rusterp_die "failed to fetch ref '${branch}' from ${RUSTERP_REPO_URL} (fail-closed; no fallback)"
+    fi
+    if ! git -C "$SRC_DIR" checkout -f FETCH_HEAD; then
+      rusterp_die "failed to checkout fetched ref '${branch}'"
+    fi
+  else
+    mkdir -p "$(dirname "$SRC_DIR")"
+    rm -rf "$SRC_DIR"
+    rusterp_info "cloning ${RUSTERP_REPO_URL} (branch ${branch}) → ${SRC_DIR}"
+    if ! git clone --depth 1 --branch "$branch" "$RUSTERP_REPO_URL" "$SRC_DIR"; then
+      rusterp_die "failed to clone ref '${branch}' from ${RUSTERP_REPO_URL} (fail-closed; no fallback to main)"
+    fi
+  fi
+
+  rusterp_info "building rusterp-server (release)"
+  (
+    cd "$SRC_DIR"
+    cargo build -p rusterp-server --release
+  ) || rusterp_die "cargo build failed"
+
+  local built="${SRC_DIR}/target/release/rusterp-server"
+  if [ ! -x "$built" ]; then
+    rusterp_die "expected binary not found: ${built}"
+  fi
+
+  install -m 755 "$built" "$SERVER_BIN"
+  rusterp_write_run_script "$RUN_SCRIPT" "$SERVER_BIN"
+  rusterp_write_core_env_example "${RUSTERP_HOME_RESOLVED}/core.env.example"
+
+  # Optional convenience link into user/system bin dir (same as install.sh target).
+  local link_dir
+  link_dir="$(rusterp_default_bin_dir)"
+  mkdir -p "$link_dir"
+  ln -sfn "$SERVER_BIN" "${link_dir}/rusterp-server"
+  ln -sfn "$RUN_SCRIPT" "${link_dir}/rusterp-run-core"
+
+  printf '%s\n' "$branch" >"${STATE_DIR}/core.branch"
+  printf '%s\n' "$RUSTERP_REPO_URL" >"${STATE_DIR}/core.repo"
+  date -u +"%Y-%m-%dT%H:%M:%SZ" >"${STATE_DIR}/core.installed_at"
+
+  # Ship minimal systemd example next to install (not enabled).
+  if [ -f "${_RUSTERP_DIR}/rusterp-server.service.example" ]; then
+    install -m 644 "${_RUSTERP_DIR}/rusterp-server.service.example" \
+      "${RUSTERP_HOME_RESOLVED}/rusterp-server.service.example" 2>/dev/null || true
+  elif [ -f "${SRC_DIR}/dist/rusterp-server.service.example" ]; then
+    install -m 644 "${SRC_DIR}/dist/rusterp-server.service.example" \
+      "${RUSTERP_HOME_RESOLVED}/rusterp-server.service.example" 2>/dev/null || true
+  fi
+
+  rusterp_info "core installed"
+  rusterp_info "binary: ${SERVER_BIN}"
+  rusterp_info "run:    ${RUN_SCRIPT}"
+  rusterp_info "or:     RUSTERP_LISTEN=127.0.0.1:50051 ${SERVER_BIN}"
+  rusterp_info "status: rusterp status"
+  echo "ok core branch=${branch}"
+}
+
+main() {
+  if [ "$#" -lt 1 ]; then
+    usage
+    exit 2
+  fi
+  case "$1" in
+    help | -h | --help)
+      usage
+      ;;
+    status)
+      shift
+      cmd_status "$@"
+      ;;
+    install)
+      shift
+      if [ "$#" -lt 1 ]; then
+        rusterp_die "usage: rusterp install core [--branch <name>]"
+      fi
+      case "$1" in
+        core)
+          shift
+          cmd_install_core "$@"
+          ;;
+        ui-wasm)
+          rusterp_die "role 'ui-wasm' is not implemented in this repo (separate UI / later Spec)"
+          ;;
+        *)
+          rusterp_die "unknown role: $1 (Phase 3 supports: core)"
+          ;;
+      esac
+      ;;
+    *)
+      rusterp_die "unknown command: $1 (try: rusterp help)"
+      ;;
+  esac
+}
+
+main "$@"

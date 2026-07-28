@@ -1,0 +1,13 @@
+[package]
+name = "rusterp-parties"
+description = "Parties functional domain for RustERP (customers, suppliers, prospects, contacts)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+rusterp-modules = { path = "../rusterp-modules" }
+uuid = { version = "1", features = ["v4"] }

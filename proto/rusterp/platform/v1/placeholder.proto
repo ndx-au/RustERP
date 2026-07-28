@@ -1,0 +1,11 @@
+// Copyright 2026 NDX Pty Ltd and contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Placeholder only — no codegen is run in Phase 0.
+// Package naming follows rusterp.<area>.v1 (see proto/README.md).
+
+syntax = "proto3";
+
+package rusterp.platform.v1;
+
+// Intentionally empty: real messages and services arrive with the first API change.

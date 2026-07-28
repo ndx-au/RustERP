@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../RustERP-UI-WASM"
+		},
+		{
+			"path": "../macaron"
+		}
+	],
+	"settings": {}
+}

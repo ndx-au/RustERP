@@ -1,0 +1,17 @@
+# Example rusterp-server.toml — copy to repo root or set RUSTERP_CONFIG.
+#
+# Listen precedence: CLI flags > this file > RUSTERP_LISTEN / RUSTERP_HTTP_LISTEN > defaults.
+
+[tcp]
+listen = "127.0.0.1:50051"
+
+[http]
+listen = "127.0.0.1:8123"
+static_dir = "dist/ui"
+
+[port_conflict]
+# clobber (default): SIGTERM own instance via pidfile, then fuser -k the port
+# fail: exit if port still busy after own restart attempt
+policy = "clobber"
+pid_file = ".local/rusterp-server.pid"
+graceful_secs = 5

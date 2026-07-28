@@ -1,0 +1,17 @@
+[package]
+name = "rusterp-proto"
+description = "Generated gRPC/protobuf types and services for RustERP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+prost = { workspace = true }
+tonic = { workspace = true, default-features = false, features = ["codegen", "transport"] }
+tonic-prost = { workspace = true }
+
+[build-dependencies]
+tonic-prost-build = { workspace = true }
