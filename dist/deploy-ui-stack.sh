@@ -65,6 +65,12 @@ echo "==> installing static assets to $ROOT/dist/ui"
 mkdir -p "$ROOT/dist/ui"
 rsync -a --delete "$UI_ROOT/dist/" "$ROOT/dist/ui/"
 
+echo "==> generating zstd precompressed assets (.zst)"
+for f in "$ROOT/dist/ui"/*.wasm "$ROOT/dist/ui"/*.js "$ROOT/dist/ui"/*.html; do
+  [[ -f "$f" ]] || continue
+  zstd -19 -f -o "${f}.zst" "$f" 2>/dev/null && echo "  $(basename "$f").zst ($(stat -c%s "${f}.zst") bytes)"
+done
+
 echo "==> building rusterp-server (release)"
 # Agent shells may set CARGO_TARGET_DIR away from the repo; deploy uses ./target/.
 (
