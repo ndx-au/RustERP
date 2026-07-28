@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use crate::http::{DEFAULT_HTTP_LISTEN, HTTP_LISTEN_ENV};
 use rusterp_server::{DEFAULT_LISTEN, LISTEN_ENV};
+use rusterp_storage::{BackendKind, StorageConfig};
 
 /// Env var pointing at a TOML config file.
 pub const CONFIG_ENV: &str = "RUSTERP_CONFIG";
@@ -77,6 +78,8 @@ pub struct ServerConfig {
     pub http: HttpConfig,
     #[serde(default)]
     pub port_conflict: PortConflictConfig,
+    #[serde(default)]
+    pub storage: StorageConfig,
 }
 
 impl Default for ServerConfig {
@@ -85,6 +88,7 @@ impl Default for ServerConfig {
             tcp: TcpConfig::default(),
             http: HttpConfig::default(),
             port_conflict: PortConflictConfig::default(),
+            storage: StorageConfig::default(),
         }
     }
 }
@@ -153,6 +157,49 @@ impl ServerConfig {
                     .join(p)
             }
         })
+    }
+
+    /// Resolve storage configuration from env vars → TOML → defaults.
+    pub fn resolve_storage_config(&self) -> StorageConfig {
+        let backend = std::env::var("RUSTERP_STORAGE_BACKEND")
+            .ok()
+            .and_then(|v| match v.as_str() {
+                "postgres" => Some(BackendKind::Postgres),
+                "sqlite" => Some(BackendKind::Sqlite),
+                _ => None,
+            })
+            .unwrap_or_else(|| self.storage.backend);
+
+        let sqlite_path = std::env::var("RUSTERP_SQLITE_PATH")
+            .ok()
+            .unwrap_or_else(|| self.storage.sqlite_path.clone());
+
+        let postgres_url = std::env::var("RUSTERP_POSTGRES_URL")
+            .ok()
+            .or(self.storage.postgres_url.clone());
+
+        let litestream_config = self.storage.litestream_config.clone();
+        let litestream_replica_url = std::env::var("RUSTERP_LITESTREAM_REPLICA_URL")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| v.trim().to_string())
+            .or_else(|| {
+                let v = self.storage.litestream_replica_url.trim().to_string();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
+            })
+            .unwrap_or_default();
+
+        StorageConfig {
+            backend,
+            sqlite_path,
+            postgres_url,
+            litestream_config,
+            litestream_replica_url,
+        }
     }
 }
 

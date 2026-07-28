@@ -68,7 +68,7 @@ dist/
   rusterp, rusterp-lib.sh  installer helper CLI
   test-dist.sh             offline installer smoke
 crates/
-  rusterp-storage/         storage traits + backend stubs
+  rusterp-storage/         storage traits + SQLite (rusqlite) / PostgreSQL (tokio-postgres) backends
   rusterp-modules/         functional module registry / activation
   rusterp-parties/         Parties domain (customers/suppliers/prospects/contacts)
   rusterp-proto/           tonic/prost codegen from proto/
@@ -126,8 +126,11 @@ claims). Prefer small, reviewable diffs.
   protos until a Spec calls for real behavior.
 - **Domain crates land when the domain lands.** Do not add empty
   parties/catalog/sales/… crates “for later” unless the Spec says so.
-- **Storage:** keep I/O behind `rusterp-storage` (or successors). Litestream is an
-  ops path for SQLite, not a silent required runtime crate unless specified.
+- **Storage:** real backends implemented in `rusterp-storage`:
+  SQLite (rusqlite 0.40, bundled) is default, PostgreSQL (tokio-postgres 0.7,
+  plaintext) is alternative. Both implement `Storage::ping()` via `SELECT 1`.
+  Litestream is an ops path — the server warns at startup when SQLite is
+  selected without Litestream configured.
 - **Protos:** definitions under `proto/`; codegen/server wiring only when Spec’d.
 - **HTTP/UI transport:** keep axum/slozhn/static serving in `rusterp-server` only;
   do not pull egui/eframe into core crates. UI changes belong in RustERP-UI-WASM.

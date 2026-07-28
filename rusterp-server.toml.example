@@ -1,6 +1,8 @@
 # Example rusterp-server.toml — copy to repo root or set RUSTERP_CONFIG.
 #
 # Listen precedence: CLI flags > this file > RUSTERP_LISTEN / RUSTERP_HTTP_LISTEN > defaults.
+#
+# Storage precedence: Env vars > this `[storage]` section > defaults.
 
 [tcp]
 listen = "127.0.0.1:50051"
@@ -15,3 +17,15 @@ static_dir = "dist/ui"
 policy = "clobber"
 pid_file = ".local/rusterp-server.pid"
 graceful_secs = 5
+
+[storage]
+# "sqlite" (default) or "postgres"
+backend = "sqlite"
+# SQLite database file path
+sqlite_path = "rusterp.db"
+# PostgreSQL connection URI (required when backend = "postgres")
+# postgres_url = "postgres://user:pass@host:5432/rusterp"
+# Path to a litestream.yml configuration file (optional)
+# litestream_config = "/etc/litestream.yml"
+# Litestream replica URL, set via env RUSTERP_LITESTREAM_REPLICA_URL as alternative
+# litestream_replica_url = "s3://my-bucket/rusterp"

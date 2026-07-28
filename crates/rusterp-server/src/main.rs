@@ -15,10 +15,12 @@ mod http;
 mod port_guard;
 
 use std::process;
+use std::sync::Arc;
 
 use rusterp_server::{
     build_grpc_routes, build_router, new_shared_repo, parse_listen_from_args, LISTEN_ENV,
 };
+use rusterp_storage::from_config;
 use tokio_util::sync::CancellationToken;
 
 use config::{ServerConfig, CONFIG_ENV};
@@ -98,9 +100,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ensure_ports_available(&[tcp_addr, http_addr], &file_cfg.port_conflict)?;
     write_pid_file(&pid_path, process::id())?;
 
+    let storage_cfg = file_cfg.resolve_storage_config();
+    let storage: Arc<dyn rusterp_storage::Storage> = Arc::from(from_config(&storage_cfg)?);
+    tracing::info!("storage backend: {}", storage.backend_kind());
+    storage_cfg.warn_if_no_litestream();
+
     let repo = new_shared_repo();
-    let tcp_router = build_router(repo.clone())?;
-    let grpc_routes = build_grpc_routes(repo)?;
+    let tcp_router = build_router(storage.clone(), repo.clone())?;
+    let grpc_routes = build_grpc_routes(storage, repo)?;
 
     let cancel = CancellationToken::new();
 

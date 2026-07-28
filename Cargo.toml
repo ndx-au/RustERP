@@ -22,8 +22,9 @@ authors = ["NDX Pty Ltd and contributors"]
 [workspace.dependencies]
 tonic = { version = "0.14", default-features = false }
 prost = "0.14"
-tokio = { version = "1", default-features = false }
+tokio = { version = "1", features = ["rt"] }
 tokio-util = { version = "0.7", default-features = false }
+tokio-postgres = { version = "0.7", features = ["runtime-tokio"] }
 slozhn = { version = "1.1", default-features = false }
 axum = { version = "0.8", default-features = false }
 tower-http = { version = "0.6", default-features = false }

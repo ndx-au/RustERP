@@ -9,3 +9,12 @@ homepage.workspace = true
 authors.workspace = true
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio-postgres = "0.7"
+tracing = "0.1"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "default"] }
+tempfile = "3"

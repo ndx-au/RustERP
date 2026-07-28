@@ -153,6 +153,10 @@ graceful_secs = 5
 | `RUSTERP_LISTEN` | `127.0.0.1:50051` | TCP gRPC (grpcurl, API tools) |
 | `RUSTERP_HTTP_LISTEN` | `127.0.0.1:8123` | HTTP + gRPC-over-WebSocket at `/rpc` |
 | `RUSTERP_STATIC` | from config or `dist/ui/` when present | Static WASM shell directory |
+| `RUSTERP_STORAGE_BACKEND` | `sqlite` | Storage backend: `sqlite` or `postgres` |
+| `RUSTERP_SQLITE_PATH` | `rusterp.db` | SQLite database file path |
+| `RUSTERP_POSTGRES_URL` | _(none)_ | PostgreSQL connection URI |
+| `RUSTERP_LITESTREAM_REPLICA_URL` | _(none)_ | Litestream replica URL (suppresses SQLite backup warning) |
 
 On startup, if a listen port is busy the server applies `[port_conflict]`:
 **clobber** (default) sends SIGTERM to the prior instance recorded in the
@@ -160,6 +164,26 @@ pidfile, waits, then kills any remaining occupant; **fail** exits with an error.
 
 Server reflection is enabled on the TCP leg for discovery tools. Both listeners
 shut down together on Ctrl+C / SIGTERM.
+
+### Storage backends
+
+`rusterp-server` supports two persistence backends, selected via the
+`[storage]` section of `rusterp-server.toml` (or env vars `RUSTERP_STORAGE_BACKEND`,
+`RUSTERP_SQLITE_PATH`, `RUSTERP_POSTGRES_URL`): | Backend | Crate | How it works |
+|-----------|-------|-------------|
+| **SQLite** | [`rusqlite`](https://github.com/rusqlite/rusqlite) 0.40 (bundled) | Opens a real `.db` file; `SELECT 1` is the health check. Default — set `backend = "sqlite"`. |
+| **PostgreSQL** | [`tokio-postgres`](https://github.com/sfackler/rust-postgres) 0.7 (plaintext) | Connects via connection string URI; required `postgres_url` in config. Set `backend = "postgres"`. |
+
+**Litestream warning:** when SQLite is selected and no Litestream configuration
+is detected (no `litestream_config` path AND no
+`LITESTREAM_REPLICA_URL` env var), the server logs:
+
+> When using SQLite, RustERP needs Litestream to be implemented with active
+> backup storage or you could lose all of your data
+
+This warning is suppressed when Litestream is configured.
+
+Env var override for backend: `RUSTERP_STORAGE_BACKEND=sqlite|postgres`.
 
 ### Reference UI (separate repo)
 

@@ -19,6 +19,7 @@ use rusterp_parties::{
     Contact as DomainContact, InMemoryPartyRepository, NewContact, NewParty, Party as DomainParty,
     PartyError, PartyRepository, PartyRole as DomainRole, PartyUpdate,
 };
+use rusterp_storage::Storage;
 use rusterp_proto::party::v1::party_service_server::PartyService;
 use rusterp_proto::party::v1::{
     party_service_server::PartyServiceServer, AddContactRequest, Contact, CreatePartyRequest,
@@ -278,9 +279,7 @@ impl HealthService for HealthSvc {
 }
 
 /// Build tonic service routes shared by TCP and slozhn HTTP transports.
-pub fn build_grpc_routes(
-    repo: SharedRepo,
-) -> Result<tonic::service::Routes, Box<dyn std::error::Error + Send + Sync>> {
+pub fn build_grpc_routes(storage: Arc<dyn Storage>, repo: SharedRepo) -> Result<tonic::service::Routes, Box<dyn std::error::Error + Send + Sync>> {
     let reflection = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
         .build_v1()?;
@@ -291,13 +290,14 @@ pub fn build_grpc_routes(
         .add_service(PartyServiceServer::new(PartySvc::new(repo.clone())))
         .add_service(HealthServiceServer::new(HealthSvc));
 
+    // `storage` is wired so it can be used by domain crates in a later Spec.
+    let _ = storage;
+
     Ok(routes.routes())
 }
 
 /// Build the tonic TCP router with Party + Health + reflection (no bind).
-pub fn build_router(
-    repo: SharedRepo,
-) -> Result<tonic::transport::server::Router, Box<dyn std::error::Error + Send + Sync>> {
+pub fn build_router(storage: Arc<dyn Storage>, repo: SharedRepo) -> Result<tonic::transport::server::Router, Box<dyn std::error::Error + Send + Sync>> {
     let reflection = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
         .build_v1()?;
@@ -306,6 +306,9 @@ pub fn build_router(
         .add_service(reflection)
         .add_service(PartyServiceServer::new(PartySvc::new(repo)))
         .add_service(HealthServiceServer::new(HealthSvc));
+
+    // `storage` is wired so it can be used by domain crates in a later Spec.
+    let _ = storage;
 
     Ok(router)
 }
@@ -452,11 +455,18 @@ mod tests {
 
     #[test]
     fn build_router_succeeds() {
-        build_router(new_shared_repo()).expect("router");
+        let storage = build_memory_storage();
+        build_router(storage, new_shared_repo()).expect("router");
     }
 
     #[test]
     fn build_grpc_routes_succeeds() {
-        build_grpc_routes(new_shared_repo()).expect("grpc routes");
+        let storage = build_memory_storage();
+        build_grpc_routes(storage, new_shared_repo()).expect("grpc routes");
+    }
+
+    fn build_memory_storage() -> Arc<dyn Storage> {
+        use rusterp_storage::SqliteStorage;
+        Arc::new(SqliteStorage::new(":memory:"))
     }
 }
