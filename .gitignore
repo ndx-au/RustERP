@@ -13,9 +13,10 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
-# Nucleus: keep .nucleus/ tracked (specs, out, attestations, state).
-# Never commit the local HMAC key used to sign attestation artifacts.
-.nucleus/attest.key
+# Nucleus honesty-loop state — local only (never commit)
+.nucleus/
+# Agent turn dumps outside Nucleus
+.out/
 
 # Editor / OS noise
 .idea/
@@ -25,7 +26,5 @@ target
 .DS_Store
 # Runtime pid/log — never commit
 .local/
-# Agent turn dumps often contain ops; keep specs/attestations if you want
-.nucleus/out/
 # Local deploy config (use rusterp-server.toml.example)
 rusterp-server.toml

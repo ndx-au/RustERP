@@ -78,12 +78,8 @@ crates/
     src/port_guard.rs      listen-port clobber/fail policy
 proto/                     protobuf conventions and .proto sources
 .local/                    runtime pid/log (gitignored; created at deploy/run)
-.nucleus/
-  specs/                   Nucleus specs (tracked)
-  attestations/            harness-captured verification (tracked)
-  out/                     agent turn copies (tracked)
-  state.json               honesty-loop phase state (tracked)
-  attest.key               local HMAC key — gitignored; never commit
+.nucleus/                  Nucleus local state (gitignored entire tree)
+.out/                      agent turn dumps (gitignored)
 ```
 
 **Sibling checkout:** local dev expects RustERP-UI-WASM beside this repo
@@ -144,13 +140,11 @@ claims). Prefer small, reviewable diffs.
 
 | Path | Tracked? | Purpose |
 |------|----------|---------|
-| `.nucleus/specs/` | yes | Current and historical specs |
-| `.nucleus/attestations/` | yes | Real command captures for review |
-| `.nucleus/out/` | yes | Copied agent replies for the loop |
-| `.nucleus/state.json` | yes | Phase / role / change id |
-| `.nucleus/attest.key` | **no** | HMAC signing key — local only |
+| `.nucleus/` | **no** | Entire tree is local-only (specs, attestations, out, state, key) |
+| `.out/` | **no** | Agent turn dumps outside Nucleus |
 
-`.nucleus/` is **not** gitignored as a whole. Only `attest.key` is ignored.
+Both directories are **gitignored**. Keep them on disk for local honesty-loop
+work; they must not appear in git history.
 
 ## Roles (when Nucleus is engaged)
 
