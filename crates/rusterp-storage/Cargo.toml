@@ -1,6 +1,6 @@
 [package]
 name = "rusterp-storage"
-description = "Storage abstraction for RustERP (SQLite + Litestream path, PostgreSQL)"
+description = "PostgreSQL storage for RustERP (sqlx pool + migrations)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,12 +9,10 @@ homepage.workspace = true
 authors.workspace = true
 
 [dependencies]
+async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-tokio-postgres = "0.7"
+sqlx = { workspace = true }
 tracing = "0.1"
 
 [dev-dependencies]
-tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "default"] }
-tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

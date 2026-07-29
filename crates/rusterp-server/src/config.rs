@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::http::{DEFAULT_HTTP_LISTEN, HTTP_LISTEN_ENV};
 use rusterp_server::{DEFAULT_LISTEN, LISTEN_ENV};
-use rusterp_storage::{BackendKind, StorageConfig};
+use rusterp_storage::StorageConfig;
 
 /// Env var pointing at a TOML config file.
 pub const CONFIG_ENV: &str = "RUSTERP_CONFIG";
@@ -161,44 +161,33 @@ impl ServerConfig {
 
     /// Resolve storage configuration from env vars → TOML → defaults.
     pub fn resolve_storage_config(&self) -> StorageConfig {
-        let backend = std::env::var("RUSTERP_STORAGE_BACKEND")
-            .ok()
-            .and_then(|v| match v.as_str() {
-                "postgres" => Some(BackendKind::Postgres),
-                "sqlite" => Some(BackendKind::Sqlite),
-                _ => None,
-            })
-            .unwrap_or_else(|| self.storage.backend);
-
-        let sqlite_path = std::env::var("RUSTERP_SQLITE_PATH")
-            .ok()
-            .unwrap_or_else(|| self.storage.sqlite_path.clone());
-
         let postgres_url = std::env::var("RUSTERP_POSTGRES_URL")
             .ok()
-            .or(self.storage.postgres_url.clone());
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| self.storage.postgres_url.clone());
 
-        let litestream_config = self.storage.litestream_config.clone();
-        let litestream_replica_url = std::env::var("RUSTERP_LITESTREAM_REPLICA_URL")
+        let max_connections = std::env::var("RUSTERP_PG_MAX_CONNECTIONS")
             .ok()
-            .filter(|v| !v.is_empty())
-            .map(|v| v.trim().to_string())
-            .or_else(|| {
-                let v = self.storage.litestream_replica_url.trim().to_string();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            })
-            .unwrap_or_default();
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(self.storage.max_connections);
+
+        let min_connections = std::env::var("RUSTERP_PG_MIN_CONNECTIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(self.storage.min_connections);
+
+        let acquire_timeout_secs = std::env::var("RUSTERP_PG_ACQUIRE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(self.storage.acquire_timeout_secs);
 
         StorageConfig {
-            backend,
-            sqlite_path,
             postgres_url,
-            litestream_config,
-            litestream_replica_url,
+            max_connections,
+            min_connections,
+            acquire_timeout_secs,
+            idle_timeout_secs: self.storage.idle_timeout_secs,
+            max_lifetime_secs: self.storage.max_lifetime_secs,
         }
     }
 }

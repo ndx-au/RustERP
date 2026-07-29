@@ -3,8 +3,8 @@
 //! # Runtime
 //!
 //! Async stack is **tokio** + **tonic**. Persistence uses
-//! [`rusterp_parties::SqlitePartyRepository`] (durable via SQLite). **Auth is not
-//! enforced.**
+//! [`rusterp_parties::PostgresPartyRepository`] (durable via PostgreSQL/sqlx).
+//! **Auth is not enforced.**
 //!
 //! # Listen address
 //!
@@ -13,7 +13,7 @@
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use rusterp_parties::{
     Contact as DomainContact, InMemoryPartyRepository, NewContact, NewParty,
@@ -37,10 +37,9 @@ pub const DEFAULT_LISTEN: &str = "127.0.0.1:50051";
 /// Environment variable for listen override (CLI `--listen` takes precedence).
 pub const LISTEN_ENV: &str = "RUSTERP_LISTEN";
 
-/// Shared in-process party store — backed by a trait object so the
-/// concrete repository (in-memory or SQLite) can be swapped without
-/// changing the service wiring.
-pub type SharedRepo = Arc<Mutex<dyn PartyRepository>>;
+/// Shared party store — backed by a trait object so the concrete repository
+/// can be swapped without changing the service wiring.
+pub type SharedRepo = Arc<dyn PartyRepository>;
 
 /// Resolve listen address: `cli_override` → `RUSTERP_LISTEN` → [`DEFAULT_LISTEN`].
 pub fn resolve_listen_addr(cli_override: Option<&str>) -> Result<SocketAddr, String> {
@@ -162,15 +161,13 @@ impl PartyService for PartySvc {
     ) -> Result<Response<Party>, Status> {
         let req = request.into_inner();
         let roles = roles_from_proto(&req.roles)?;
-        let mut repo = self
+        let party = self
             .repo
-            .lock()
-            .map_err(|_| Status::internal("party repository lock poisoned"))?;
-        let party = repo
             .create_party(NewParty {
                 display_name: req.display_name,
                 roles,
             })
+            .await
             .map_err(map_party_error)?;
         Ok(Response::new(party_to_proto(party)))
     }
@@ -180,11 +177,7 @@ impl PartyService for PartySvc {
         request: Request<GetPartyRequest>,
     ) -> Result<Response<Party>, Status> {
         let id = request.into_inner().id;
-        let repo = self
-            .repo
-            .lock()
-            .map_err(|_| Status::internal("party repository lock poisoned"))?;
-        let party = repo.get_party(&id).map_err(map_party_error)?;
+        let party = self.repo.get_party(&id).await.map_err(map_party_error)?;
         Ok(Response::new(party_to_proto(party)))
     }
 
@@ -192,11 +185,14 @@ impl PartyService for PartySvc {
         &self,
         _request: Request<ListPartiesRequest>,
     ) -> Result<Response<ListPartiesResponse>, Status> {
-        let repo = self
+        let parties = self
             .repo
-            .lock()
-            .map_err(|_| Status::internal("party repository lock poisoned"))?;
-        let parties = repo.list_parties().into_iter().map(party_to_proto).collect();
+            .list_parties()
+            .await
+            .map_err(map_party_error)?
+            .into_iter()
+            .map(party_to_proto)
+            .collect();
         Ok(Response::new(ListPartiesResponse { parties }))
     }
 
@@ -213,12 +209,10 @@ impl PartyService for PartySvc {
         if req.update_roles {
             update.roles = Some(roles_from_proto(&req.roles)?);
         }
-        let mut repo = self
+        let party = self
             .repo
-            .lock()
-            .map_err(|_| Status::internal("party repository lock poisoned"))?;
-        let party = repo
             .update_party(&req.id, update)
+            .await
             .map_err(map_party_error)?;
         Ok(Response::new(party_to_proto(party)))
     }
@@ -228,11 +222,8 @@ impl PartyService for PartySvc {
         request: Request<AddContactRequest>,
     ) -> Result<Response<Contact>, Status> {
         let req = request.into_inner();
-        let mut repo = self
+        let contact = self
             .repo
-            .lock()
-            .map_err(|_| Status::internal("party repository lock poisoned"))?;
-        let contact = repo
             .add_contact(
                 &req.party_id,
                 NewContact {
@@ -241,6 +232,7 @@ impl PartyService for PartySvc {
                     phone: req.phone,
                 },
             )
+            .await
             .map_err(map_party_error)?;
         Ok(Response::new(contact_to_proto(contact)))
     }
@@ -250,12 +242,10 @@ impl PartyService for PartySvc {
         request: Request<ListContactsRequest>,
     ) -> Result<Response<ListContactsResponse>, Status> {
         let party_id = request.into_inner().party_id;
-        let repo = self
+        let contacts = self
             .repo
-            .lock()
-            .map_err(|_| Status::internal("party repository lock poisoned"))?;
-        let contacts = repo
             .list_contacts(&party_id)
+            .await
             .map_err(map_party_error)?
             .into_iter()
             .map(contact_to_proto)
@@ -264,9 +254,17 @@ impl PartyService for PartySvc {
     }
 }
 
-/// Minimal Health service.
-#[derive(Debug, Default, Clone)]
-pub struct HealthSvc;
+/// Health service — reports database connectivity via storage ping.
+#[derive(Clone)]
+pub struct HealthSvc {
+    storage: Arc<dyn Storage>,
+}
+
+impl HealthSvc {
+    pub fn new(storage: Arc<dyn Storage>) -> Self {
+        Self { storage }
+    }
+}
 
 #[tonic::async_trait]
 impl HealthService for HealthSvc {
@@ -274,6 +272,10 @@ impl HealthService for HealthSvc {
         &self,
         _request: Request<HealthCheckRequest>,
     ) -> Result<Response<HealthCheckResponse>, Status> {
+        self.storage
+            .ping()
+            .await
+            .map_err(|e| Status::unavailable(e.message()))?;
         Ok(Response::new(HealthCheckResponse {
             status: "ok".into(),
         }))
@@ -290,10 +292,7 @@ pub fn build_grpc_routes(storage: Arc<dyn Storage>, repo: SharedRepo) -> Result<
     routes
         .add_service(reflection)
         .add_service(PartyServiceServer::new(PartySvc::new(repo.clone())))
-        .add_service(HealthServiceServer::new(HealthSvc));
-
-    // `storage` is wired so it can be used by domain crates in a later Spec.
-    let _ = storage;
+        .add_service(HealthServiceServer::new(HealthSvc::new(storage.clone())));
 
     Ok(routes.routes())
 }
@@ -307,17 +306,14 @@ pub fn build_router(storage: Arc<dyn Storage>, repo: SharedRepo) -> Result<tonic
     let router = tonic::transport::Server::builder()
         .add_service(reflection)
         .add_service(PartyServiceServer::new(PartySvc::new(repo)))
-        .add_service(HealthServiceServer::new(HealthSvc));
-
-    // `storage` is wired so it can be used by domain crates in a later Spec.
-    let _ = storage;
+        .add_service(HealthServiceServer::new(HealthSvc::new(storage)));
 
     Ok(router)
 }
 
 /// Create a fresh shared repository backed by in-memory storage (for tests).
 pub fn new_shared_repo() -> SharedRepo {
-    Arc::new(Mutex::new(InMemoryPartyRepository::new()))
+    Arc::new(InMemoryPartyRepository::new())
 }
 
 #[cfg(test)]
@@ -428,7 +424,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_check_returns_ok() {
-        let svc = HealthSvc;
+        let svc = HealthSvc::new(build_test_storage());
         let resp = svc
             .check(Request::new(HealthCheckRequest {}))
             .await
@@ -457,18 +453,29 @@ mod tests {
 
     #[test]
     fn build_router_succeeds() {
-        let storage = build_memory_storage();
+        let storage = build_test_storage();
         build_router(storage, new_shared_repo()).expect("router");
     }
 
     #[test]
     fn build_grpc_routes_succeeds() {
-        let storage = build_memory_storage();
+        let storage = build_test_storage();
         build_grpc_routes(storage, new_shared_repo()).expect("grpc routes");
     }
 
-    fn build_memory_storage() -> Arc<dyn Storage> {
-        use rusterp_storage::SqliteStorage;
-        Arc::new(SqliteStorage::new(":memory:").unwrap())
+    fn build_test_storage() -> Arc<dyn Storage> {
+        use async_trait::async_trait;
+        use rusterp_storage::StorageError;
+
+        struct OkStorage;
+
+        #[async_trait]
+        impl Storage for OkStorage {
+            async fn ping(&self) -> Result<(), StorageError> {
+                Ok(())
+            }
+        }
+
+        Arc::new(OkStorage)
     }
 }

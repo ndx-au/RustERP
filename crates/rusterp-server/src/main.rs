@@ -1,7 +1,7 @@
 //! RustERP gRPC server binary.
 //!
 //! Serves `rusterp.party.v1.PartyService` and `rusterp.platform.v1.HealthService`
-//! with a **SQLite-backed** party store. **Auth is not enforced.**
+//! with a **PostgreSQL-backed** party store. **Auth is not enforced.**
 //!
 //! **Dual transport:**
 //! - TCP gRPC on `RUSTERP_LISTEN` (default `127.0.0.1:50051`) — grpcurl / API tools.
@@ -15,13 +15,13 @@ mod http;
 mod port_guard;
 
 use std::process;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use rusterp_parties::PostgresPartyRepository;
 use rusterp_server::{
-    build_grpc_routes, build_router, new_shared_repo, parse_listen_from_args, SharedRepo, LISTEN_ENV,
+    build_grpc_routes, build_router, parse_listen_from_args, SharedRepo, LISTEN_ENV,
 };
-use rusterp_parties::SqlitePartyRepository;
-use rusterp_storage::from_config;
+use rusterp_storage::bootstrap;
 use tokio_util::sync::CancellationToken;
 
 use config::{ServerConfig, CONFIG_ENV};
@@ -30,7 +30,7 @@ use port_guard::{ensure_ports_available, remove_pid_file, resolve_pid_file, writ
 
 fn print_usage() {
     eprintln!(
-        "RustERP gRPC server (in-memory Parties; auth not enforced)\n\
+        "RustERP gRPC server (PostgreSQL Parties; auth not enforced)\n\
          \n\
          Usage:\n\
            rusterp-server [--listen ADDR] [--http-listen ADDR]\n\
@@ -44,6 +44,7 @@ fn print_usage() {
            {LISTEN_ENV}            TCP gRPC listen if --listen is not set\n\
            {HTTP_LISTEN_ENV}       HTTP listen if --http-listen is not set\n\
            {CONFIG_ENV}            Path to rusterp-server.toml\n\
+           RUSTERP_POSTGRES_URL    PostgreSQL connection URI (required)\n\
          \n\
          Config file (optional): rusterp-server.toml in cwd or repo root.\n\
          Port conflict default: restart self via pidfile, then clobber occupant.\n"
@@ -102,45 +103,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     write_pid_file(&pid_path, process::id())?;
 
     let storage_cfg = file_cfg.resolve_storage_config();
-    storage_cfg.warn_if_no_litestream();
+    storage_cfg
+        .require_postgres_url()
+        .map_err(|e| e.message().to_string())?;
 
-    // Determine the storage backend and construct the party repository
-    // accordingly. SQLite: create storage, run migrations, build
-    // SqlitePartyRepository. Postgres is out of scope for this Spec so
-    // we fall back to in-memory parties with a warning.
-    let (storage, repo):
-        (Arc<dyn rusterp_storage::Storage>, SharedRepo)
-        = if storage_cfg.backend == rusterp_storage::BackendKind::Sqlite {
-            let backend = rusterp_storage::SqliteStorage::new(&storage_cfg.sqlite_path)?;
-            let conn = backend.conn_handle();
-            {
-                let guard = conn.lock().map_err(|e| {
-                    format!("sqlite lock poisoned: {e}")
-                })?;
-                rusterp_storage::run_migrations(&guard).map_err(|e| {
-                    format!("migrations failed: {e}")
-                })?;
-            }
-            tracing::info!(
-                "storage backend: sqlite (SQLite-backed parties)"
-            );
-            let parties_repo = Arc::new(Mutex::new(SqlitePartyRepository::new(conn)));
-            (Arc::from(backend) as Arc<dyn rusterp_storage::Storage>, parties_repo)
-        } else {
-            let backend = from_config(&storage_cfg)?;
-            tracing::warn!(
-                "Postgres storage: parties are in-memory (SQLite parties are the \
-                 active path; Postgres parties are out of scope for this Spec)"
-            );
-            (Arc::from(backend), new_shared_repo())
-        };
+    let (storage, pool) = bootstrap(&storage_cfg).await?;
+    let storage: Arc<dyn rusterp_storage::Storage> = Arc::new(storage);
+
+    tracing::info!("storage backend: postgresql (sqlx pool)");
+
+    let repo: SharedRepo = Arc::new(PostgresPartyRepository::new(pool));
 
     let tcp_router = build_router(storage.clone(), repo.clone())?;
     let grpc_routes = build_grpc_routes(storage, repo)?;
 
     let cancel = CancellationToken::new();
 
-    tracing::info!("TCP gRPC listening on {tcp_addr} (in-memory; auth not enforced)");
+    tracing::info!("TCP gRPC listening on {tcp_addr} (auth not enforced)");
 
     let tcp_handle = tokio::spawn(async move {
         if let Err(e) = tcp_router.serve(tcp_addr).await {

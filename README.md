@@ -25,7 +25,7 @@ documentation, and project news live on the official site.
 | **License** | Apache-2.0 (see [LICENSE](./LICENSE) and [NOTICE](./NOTICE)) |
 | **Tenancy** | Single-tenant by design; self-host with LXC/container isolation preferred |
 | **API** | API-first / headless — **gRPC + protobufs**; UIs are separate consumers |
-| **Storage** | Abstraction over **SQLite + Litestream** (default/recommended for most instances) **and** **PostgreSQL** |
+| **Storage** | **PostgreSQL** via sqlx (connection pool, migrations, health ping) |
 | **Permissions** | Classic **RBAC** (Users / Groups / Roles / `resource:action`); SSO (OIDC) later |
 | **Modularity** | “Snug fit” — consultants activate only the functional domains a business needs |
 
@@ -53,7 +53,7 @@ dist/
   rusterp, rusterp-lib.sh  installer helper CLI
   test-dist.sh             offline installer smoke
 crates/
-  rusterp-storage/         storage traits + SQLite / PostgreSQL stubs
+  rusterp-storage/         PostgreSQL storage (sqlx pool + migrations)
   rusterp-modules/         functional module registry / activation skeleton
   rusterp-parties/         Parties domain (first functional domain)
   rusterp-proto/           tonic/prost codegen from proto/
@@ -153,10 +153,10 @@ graceful_secs = 5
 | `RUSTERP_LISTEN` | `127.0.0.1:50051` | TCP gRPC (grpcurl, API tools) |
 | `RUSTERP_HTTP_LISTEN` | `127.0.0.1:8123` | HTTP + gRPC-over-WebSocket at `/rpc` |
 | `RUSTERP_STATIC` | from config or `dist/ui/` when present | Static WASM shell directory |
-| `RUSTERP_STORAGE_BACKEND` | `sqlite` | Storage backend: `sqlite` or `postgres` |
-| `RUSTERP_SQLITE_PATH` | `rusterp.db` | SQLite database file path |
-| `RUSTERP_POSTGRES_URL` | _(none)_ | PostgreSQL connection URI |
-| `RUSTERP_LITESTREAM_REPLICA_URL` | _(none)_ | Litestream replica URL (suppresses SQLite backup warning) |
+| `RUSTERP_POSTGRES_URL` | _(required)_ | PostgreSQL connection URI |
+| `RUSTERP_PG_MAX_CONNECTIONS` | `20` | sqlx pool max connections |
+| `RUSTERP_PG_MIN_CONNECTIONS` | `2` | sqlx pool min warm connections |
+| `RUSTERP_PG_ACQUIRE_TIMEOUT_SECS` | `3` | Pool acquire timeout (seconds) |
 
 On startup, if a listen port is busy the server applies `[port_conflict]`:
 **clobber** (default) sends SIGTERM to the prior instance recorded in the
@@ -165,25 +165,25 @@ pidfile, waits, then kills any remaining occupant; **fail** exits with an error.
 Server reflection is enabled on the TCP leg for discovery tools. Both listeners
 shut down together on Ctrl+C / SIGTERM.
 
-### Storage backends
+### Storage (PostgreSQL)
 
-`rusterp-server` supports two persistence backends, selected via the
-`[storage]` section of `rusterp-server.toml` (or env vars `RUSTERP_STORAGE_BACKEND`,
-`RUSTERP_SQLITE_PATH`, `RUSTERP_POSTGRES_URL`): | Backend | Crate | How it works |
-|-----------|-------|-------------|
-| **SQLite** | [`rusqlite`](https://github.com/rusqlite/rusqlite) 0.40 (bundled) | Opens a real `.db` file; `SELECT 1` is the health check. Default — set `backend = "sqlite"`. |
-| **PostgreSQL** | [`tokio-postgres`](https://github.com/sfackler/rust-postgres) 0.7 (plaintext) | Connects via connection string URI; required `postgres_url` in config. Set `backend = "postgres"`. |
+`rusterp-server` requires a PostgreSQL connection URI via `RUSTERP_POSTGRES_URL`
+or `[storage].postgres_url` in `rusterp-server.toml`. Persistence uses
+[`sqlx`](https://github.com/launchbadge/sqlx) with an explicitly tuned
+connection pool and embedded migrations applied at startup.
 
-**Litestream warning:** when SQLite is selected and no Litestream configuration
-is detected (no `litestream_config` path AND no
-`LITESTREAM_REPLICA_URL` env var), the server logs:
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `max_connections` | 20 | Pool size cap |
+| `min_connections` | 2 | Warm connections kept open |
+| `acquire_timeout_secs` | 3 | Fail fast when pool is exhausted |
+| `idle_timeout_secs` | 600 | Recycle idle connections |
+| `max_lifetime_secs` | 1800 | Recycle connections before LB/firewall drops |
 
-> When using SQLite, RustERP needs Litestream to be implemented with active
-> backup storage or you could lose all of your data
-
-This warning is suppressed when Litestream is configured.
-
-Env var override for backend: `RUSTERP_STORAGE_BACKEND=sqlite|postgres`.
+Health checks call `SELECT 1` on the pool. Local dev and tests that need a
+real database require a running PostgreSQL instance; unit tests use
+in-memory repositories and skip integration tests when `RUSTERP_POSTGRES_URL`
+is unset.
 
 ### Reference UI (separate repo)
 

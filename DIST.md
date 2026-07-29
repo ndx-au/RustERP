@@ -63,8 +63,7 @@ Treat **one image (or compose stack) per role**:
 Terraform/OpenTofu then owns:
 
 - LXC or VM (Proxmox provider, or cloud)
-- Network, volume for SQLite/Litestream data
-- Optional Litestream sidecar
+- Network, volume for PostgreSQL data
 - `cloud-init` or entrypoint that sets `RUSTERP_LISTEN`, endpoint URLs
 
 CLI still useful **inside** the image or on the host for “install this role into this prefix,” but Terraform becomes the preferred way to *place* instances.
@@ -75,7 +74,7 @@ CLI still useful **inside** the image or on the host for “install this role in
 
 ```text
 rusterp (CLI)
-├── install <role>     # core | ui-wasm | (later) proxy, litestream-helper
+├── install <role>     # core | ui-wasm | (later) proxy
 ├── uninstall <role>
 ├── status
 ├── upgrade <role>
@@ -142,7 +141,7 @@ Avoid a mega-installer that silently pulls half the internet. Explicit roles = s
 ## Terraform-friendly checklist (bake in early)
 
 1. **Config via env + one file** (`/etc/rusterp/core.env` or similar) — no required interactive prompts  
-2. **Stable data directory** and documented layout (SQLite path later)  
+2. **Stable data directory** and documented layout (PostgreSQL connection URI)  
 3. **Health endpoint** already exists — use it for readiness probes  
 4. **Version pin** on install (`--version` / image tag)  
 5. **Idempotent install** (re-run safe)  

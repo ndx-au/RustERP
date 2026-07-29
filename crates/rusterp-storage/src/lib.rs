@@ -1,56 +1,21 @@
-//! Storage abstraction for RustERP with working backends.
+//! PostgreSQL storage for RustERP via sqlx.
 //!
-//! Available backends:
-//! - **SQLite** via `rusqlite` — default, opens a real `.db` file.
-//! - **PostgreSQL** via `tokio-postgres` — connect via connection string.
-//!
-//! Litestream is **not** a compile-time dependency. It is an external process for
-//! SQLite replication. The server logs a WARNING when SQLite is selected without
-//! Litestream configuration:
-//!
-//! > "When using SQLite, RustERP needs Litestream to be implemented with active
-//! > backup storage or you could lose all of your data".
-//!
-//! This warning is suppressed when `litestream.yml` is detected at the configured
-//! path or `LITESTREAM_REPLICA_URL` environment variable is set.
+//! Provides a tuned [`PgPool`](DbPool), schema migrations, and a minimal
+//! [`Storage`] health-check trait.
 
+mod pool;
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
+use sqlx::PgPool;
 
-/// Backend kind for a storage instance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BackendKind {
-    /// Local SQLite database file (pair with Litestream for replication).
-    Sqlite,
-    /// PostgreSQL server.
-    Postgres,
-}
-
-impl Default for BackendKind {
-    fn default() -> Self {
-        Self::Sqlite
-    }
-}
-
-impl fmt::Display for BackendKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BackendKind::Sqlite => write!(f, "sqlite"),
-            BackendKind::Postgres => write!(f, "postgres"),
-        }
-    }
-}
+pub use pool::{connect, log_server_version, DbPool};
 
 /// Minimal storage trait for health checks.
+#[async_trait]
 pub trait Storage: Send + Sync {
-    /// Which backend this handle targets.
-    fn backend_kind(&self) -> BackendKind;
-
-    /// Lightweight health check: `SELECT 1` on the live connection.
-    fn ping(&self) -> Result<(), StorageError>;
+    /// Lightweight health check: `SELECT 1` on the live connection pool.
+    async fn ping(&self) -> Result<(), StorageError>;
 }
 
 /// Storage-layer errors.
@@ -71,445 +36,145 @@ impl StorageError {
     }
 }
 
-impl fmt::Display for StorageError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for StorageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)
     }
 }
 
 impl std::error::Error for StorageError {}
 
-// ---------------------------------------------------------------------------
-// SQLite backend (rusqlite, bundled)
-// ---------------------------------------------------------------------------
-
-/// SQLite storage backend using `rusqlite` with the `"bundled"` feature.
-///
-/// Holds the underlying `rusqlite::Connection` inside `Arc<Mutex<>>` so that
-/// other components (migrations, domain repositories) can share the same
-/// connection.
-#[derive(Clone)]
-pub struct SqliteStorage {
-    conn: Arc<Mutex<rusqlite::Connection>>,
-}
-
-impl SqliteStorage {
-    /// Create a SQLite storage handle. The connection is opened eagerly.
-    pub fn new(path: impl Into<String>) -> Result<Self, StorageError> {
-        let path = path.into();
-        let conn = rusqlite::Connection::open(&path)
-            .map_err(|e| StorageError::new(format!("failed to open SQLite DB: {e}")))?;
-        conn.execute("PRAGMA journal_mode=WAL", [])
-            .ok(); // non-fatal
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
-    }
-
-    /// Return a shared handle to the underlying connection.
-    ///
-    /// The caller can clone this `Arc<Mutex<>>` and pass it to other
-    /// components (e.g. a domain-specific repository).
-    pub fn conn_handle(&self) -> Arc<Mutex<rusqlite::Connection>> {
-        self.conn.clone()
-    }
-}
-
-impl Storage for SqliteStorage {
-    fn backend_kind(&self) -> BackendKind {
-        BackendKind::Sqlite
-    }
-
-    fn ping(&self) -> Result<(), StorageError> {
-        let guard = self.conn.lock().map_err(|e| {
-            StorageError::new(format!("sqlite lock poisoned: {e}"))
-        })?;
-        guard.query_row("SELECT 1", [], |_| Ok(()))
-            .map_err(|e| StorageError::new(format!("sqlite ping failed: {e}")))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// PostgreSQL backend (tokio-postgres, plaintext)
-// ---------------------------------------------------------------------------
-
-/// Inner state for PostgresStorage — holds the runtime + client together.
-struct PostgresInner {
-    client: Option<tokio_postgres::Client>,
-    runtime: Option<tokio::runtime::Runtime>,
-    spawned: bool,
-}
-
-/// PostgreSQL storage backend using `tokio-postgres` (no TLS).
+/// PostgreSQL storage backend backed by a shared sqlx pool.
 #[derive(Clone)]
 pub struct PostgresStorage {
-    connection_uri: String,
-    inner: Arc<Mutex<PostgresInner>>,
-}
-
-impl Drop for PostgresStorage {
-    fn drop(&mut self) {
-        // The Postgres client will send a terminate message when dropped.
-        // Keep the inner runtime alive to process the shutdown.
-    }
+    pool: PgPool,
 }
 
 impl PostgresStorage {
-    /// Create a Postgres storage handle. Connection is established lazily.
-    pub fn new(connection_uri: impl Into<String>) -> Self {
-        Self {
-            connection_uri: connection_uri.into(),
-            inner: Arc::new(Mutex::new(PostgresInner {
-                client: None,
-                runtime: None,
-                spawned: false,
-            })),
-        }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
-    fn ensure_client(&self) -> Result<(), StorageError> {
-        let mut guard = self.inner.lock().map_err(|e| {
-            StorageError::new(format!("postgres lock poisoned: {e}"))
-        })?;
-        if guard.client.is_some() {
-            return Ok(());
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+}
+
+#[async_trait]
+impl Storage for PostgresStorage {
+    async fn ping(&self) -> Result<(), StorageError> {
+        sqlx::query("SELECT 1")
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(|e| StorageError::new(format!("postgres ping failed: {e}")))
+    }
+}
+
+/// Configuration for the PostgreSQL storage backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageConfig {
+    /// PostgreSQL connection URI (required at runtime).
+    #[serde(default)]
+    pub postgres_url: String,
+    #[serde(default = "default_max_connections")]
+    pub max_connections: u32,
+    #[serde(default = "default_min_connections")]
+    pub min_connections: u32,
+    #[serde(default = "default_acquire_timeout_secs")]
+    pub acquire_timeout_secs: u64,
+    #[serde(default = "default_idle_timeout_secs")]
+    pub idle_timeout_secs: u64,
+    #[serde(default = "default_max_lifetime_secs")]
+    pub max_lifetime_secs: u64,
+}
+
+fn default_max_connections() -> u32 {
+    20
+}
+
+fn default_min_connections() -> u32 {
+    2
+}
+
+fn default_acquire_timeout_secs() -> u64 {
+    3
+}
+
+fn default_idle_timeout_secs() -> u64 {
+    600
+}
+
+fn default_max_lifetime_secs() -> u64 {
+    1800
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            postgres_url: String::new(),
+            max_connections: default_max_connections(),
+            min_connections: default_min_connections(),
+            acquire_timeout_secs: default_acquire_timeout_secs(),
+            idle_timeout_secs: default_idle_timeout_secs(),
+            max_lifetime_secs: default_max_lifetime_secs(),
         }
-        // Create a runtime to allow async connect.
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| StorageError::new(format!("failed to build runtime: {e}")))?;
-        let (client, connection) = rt
-            .block_on(async {
-                tokio_postgres::connect(&self.connection_uri, tokio_postgres::NoTls).await
-            })
-            .map_err(|e| StorageError::new(format!("postgres connect failed: {e}")))?;
-        // Spawn the driver on the runtime so receive-side I/O works.
-        rt.spawn(connection);
-        guard.runtime = Some(rt);
-        guard.client = Some(client);
+    }
+}
+
+impl StorageConfig {
+    /// Return an error when no connection URI is configured.
+    pub fn require_postgres_url(&self) -> Result<(), StorageError> {
+        if self.postgres_url.trim().is_empty() {
+            return Err(StorageError::new(
+                "postgres_url is required (set RUSTERP_POSTGRES_URL or [storage].postgres_url)",
+            ));
+        }
         Ok(())
     }
 }
 
-impl Storage for PostgresStorage {
-    fn backend_kind(&self) -> BackendKind {
-        BackendKind::Postgres
-    }
-
-    fn ping(&self) -> Result<(), StorageError> {
-        self.ensure_client()?;
-        let guard = self.inner.lock().map_err(|e| {
-            StorageError::new(format!("postgres lock poisoned: {e}"))
-        })?;
-        let client = guard.client.as_ref().ok_or_else(|| {
-            StorageError::new("client was None after ensure_client")
-        })?;
-        // Ping must happen on a runtime. If the runtime already exists (from
-        // ensure_client), use it. Otherwise we already failed above.
-        if guard.spawned {
-            // Driver is already spawned, just use the existing runtime.
-        }
-        // For simplicity: create an inline runtime for this single ping.
-        // The ensure_client already established the TCP connection by spawning
-        // the driver on its own runtime. We just need a runtime to .await
-        // the execute call.
-        let inline_rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| StorageError::new(format!("failed to build runtime: {e}")))?;
-        let result = inline_rt.block_on(async {
-            client.execute("SELECT 1", &[]).await
-        });
-        match result {
-            Ok(_) => Ok(()),
-            Err(e) => Err(StorageError::new(format!("postgres ping failed: {e}"))),
-        }
-    }
+/// Run schema migrations against the pool.
+pub async fn run_migrations(pool: &PgPool) -> Result<(), StorageError> {
+    let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let migrator = sqlx::migrate::Migrator::new(migrations_dir.as_path())
+        .await
+        .map_err(|e| StorageError::new(format!("migration load failed: {e}")))?;
+    migrator
+        .run(pool)
+        .await
+        .map_err(|e| StorageError::new(format!("migration failed: {e}")))
 }
 
-// ---------------------------------------------------------------------------
-// Storage configuration & factory
-// ---------------------------------------------------------------------------
-
-/// Configuration for the storage backend.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct StorageConfig {
-    /// Backend kind: "sqlite" or "postgres" (default: "sqlite").
-    #[serde(default)]
-    pub backend: BackendKind,
-    /// SQLite database file path.
-    #[serde(default = "default_sqlite_path")]
-    pub sqlite_path: String,
-    /// PostgreSQL connection URI (required when backend = "postgres").
-    pub postgres_url: Option<String>,
-    /// Path to a litestream.yml configuration file.
-    pub litestream_config: Option<String>,
-    /// Litestream replica URL (alternative to config file).
-    #[serde(default)]
-    pub litestream_replica_url: String,
+/// Connect to PostgreSQL, run migrations, and return storage + pool.
+pub async fn bootstrap(cfg: &StorageConfig) -> Result<(PostgresStorage, PgPool), StorageError> {
+    cfg.require_postgres_url()?;
+    let pool = connect(cfg).await?;
+    run_migrations(&pool).await?;
+    log_server_version(&pool).await;
+    Ok((PostgresStorage::new(pool.clone()), pool))
 }
-
-fn default_sqlite_path() -> String {
-    "rusterp.db".to_string()
-}
-
-impl StorageConfig {
-    /// Determine whether Litestream is considered configured.
-    pub fn litestream_configured(&self) -> bool {
-        !self.litestream_replica_url.is_empty()
-            || self.litestream_config.as_ref().map_or(false, |p| {
-                let path = Path::new(p);
-                path.is_file()
-            })
-    }
-
-    /// Emit a warning when SQLite is selected without backup configuration.
-    pub fn warn_if_no_litestream(&self) {
-        if self.backend == BackendKind::Sqlite && !self.litestream_configured() {
-            tracing::warn!(
-                "When using SQLite, RustERP needs Litestream to be implemented with active \
-                 backup storage or you could lose all of your data"
-            );
-        }
-    }
-}
-
-/// Construct a storage backend from configuration.
-pub fn from_config(cfg: &StorageConfig) -> Result<Box<dyn Storage>, StorageError> {
-    match cfg.backend {
-        BackendKind::Sqlite => {
-            let backend = SqliteStorage::new(&cfg.sqlite_path)?;
-            Ok(Box::new(backend))
-        }
-        BackendKind::Postgres => {
-            let url = cfg.postgres_url.as_ref().ok_or_else(|| {
-                StorageError::new("postgres_url is required when backend = \"postgres\"")
-            })?;
-            let backend = PostgresStorage::new(url);
-            Ok(Box::new(backend))
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Schema migrations
-// ---------------------------------------------------------------------------
-
-/// Run schema migrations on the SQLite connection.
-///
-/// Creates the three tables used by the Parties domain if they do not exist.
-pub fn run_migrations(conn: &rusqlite::Connection) -> Result<(), StorageError> {
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS parties (
-            id TEXT PRIMARY KEY,
-            display_name TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            active INTEGER NOT NULL DEFAULT 1
-        )",
-        [],
-    )
-    .map_err(|e| StorageError::new(format!("parties table creation: {e}")))?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS party_roles (
-            party_id TEXT NOT NULL REFERENCES parties(id),
-            role TEXT NOT NULL,
-            PRIMARY KEY(party_id, role)
-        )",
-        [],
-    )
-    .map_err(|e| StorageError::new(format!("party_roles table creation: {e}")))?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS contacts (
-            id TEXT PRIMARY KEY,
-            party_id TEXT NOT NULL REFERENCES parties(id),
-            name TEXT NOT NULL,
-            email TEXT,
-            phone TEXT
-        )",
-        [],
-    )
-    .map_err(|e| StorageError::new(format!("contacts table creation: {e}")))?;
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
-    /// A writer that captures all output into a `Vec<u8>` buffer.
-    #[derive(Clone)]
-    struct CaptureWriter {
-        buf: Arc<Mutex<Vec<u8>>>,
-    }
-
-    impl CaptureWriter {
-        fn new() -> Self {
-            Self {
-                buf: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-
-        fn contents(&self) -> String {
-            String::from_utf8(self.buf.lock().unwrap().clone())
-                .unwrap_or_default()
-        }
-    }
-
-    impl Write for CaptureWriter {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.buf.lock().unwrap().write(buf)
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CaptureWriter {
-        type Writer = Self;
-        fn make_writer(&self) -> Self::Writer {
-            self.clone()
-        }
+    #[test]
+    fn storage_config_defaults() {
+        let cfg = StorageConfig::default();
+        assert_eq!(cfg.max_connections, 20);
+        assert_eq!(cfg.min_connections, 2);
+        assert_eq!(cfg.acquire_timeout_secs, 3);
     }
 
     #[test]
-    fn sqlite_backend_and_ping() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let path = tmp.path().join("test.db");
-        let storage = SqliteStorage::new(path.to_str().unwrap()).unwrap();
-
-        assert_eq!(storage.backend_kind(), BackendKind::Sqlite);
-        assert!(storage.ping().is_ok());
+    fn require_postgres_url_fails_when_empty() {
+        let cfg = StorageConfig::default();
+        assert!(cfg.require_postgres_url().is_err());
     }
 
-    #[test]
-    fn sqlite_backend_kind() {
-        let db = SqliteStorage::new("sqlitetest.db").unwrap();
-        assert_eq!(db.backend_kind(), BackendKind::Sqlite);
-    }
-
-    #[test]
-    fn run_migrations_creates_tables() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let path = tmp.path().join("migration_test.db");
-        let storage = SqliteStorage::new(path.to_str().unwrap()).unwrap();
-        let conn = storage.conn_handle();
-        let guard = conn.lock().unwrap();
-
-        assert!(run_migrations(&guard).is_ok());
-
-        let tables: Vec<String> = guard
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
-            .unwrap()
-            .query_map(["parties"], |r| r.get(0))
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
-        assert!(tables.contains(&"parties".into()));
-
-        let tables: Vec<String> = guard
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
-            .unwrap()
-            .query_map(["party_roles"], |r| r.get(0))
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
-        assert!(tables.contains(&"party_roles".into()));
-
-        let tables: Vec<String> = guard
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
-            .unwrap()
-            .query_map(["contacts"], |r| r.get(0))
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
-        assert!(tables.contains(&"contacts".into()));
-    }
-
-    #[test]
-    fn run_migrations_is_idempotent() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let path = tmp.path().join("migration_idempotent.db");
-        let storage = SqliteStorage::new(path.to_str().unwrap()).unwrap();
-        let conn = storage.conn_handle();
-        let guard = conn.lock().unwrap();
-
-        assert!(run_migrations(&guard).is_ok());
-        assert!(run_migrations(&guard).is_ok());
-    }
-
-    #[test]
-    fn litestream_warning_emitted_when_no_config() {
-        // Ensure clean env state.
-        std::env::remove_var("LITESTREAM_REPLICA_URL");
-
-        let writer = CaptureWriter::new();
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(writer.clone())
-            .with_max_level(tracing::Level::WARN)
-            .finish();
-        let _guard = tracing::subscriber::set_default(subscriber);
-
-        let cfg = StorageConfig {
-            backend: BackendKind::Sqlite,
-            sqlite_path: "test.db".to_string(),
-            postgres_url: None,
-            litestream_config: None,
-            litestream_replica_url: String::new(),
-        };
-
-        cfg.warn_if_no_litestream();
-
-        let output = writer.contents();
-        assert!(
-            output.contains("Litestream"),
-            "expected warning to contain 'Litestream', got: {output:?}"
-        );
-        assert!(
-            output.contains("backup storage"),
-            "expected warning to contain 'backup storage', got: {output:?}"
-        );
-    }
-
-    #[test]
-    fn litestream_warning_suppressed_when_url_set() {
-        // Unset env var for clean test state.
-        std::env::remove_var("LITESTREAM_REPLICA_URL");
-
-        let writer = CaptureWriter::new();
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(writer.clone())
-            .with_max_level(tracing::Level::WARN)
-            .finish();
-        let _guard = tracing::subscriber::set_default(subscriber);
-
-        let cfg = StorageConfig {
-            backend: BackendKind::Sqlite,
-            sqlite_path: "test.db".to_string(),
-            postgres_url: None,
-            litestream_config: None,
-            litestream_replica_url: "s3://my-bucket/rusterp".to_string(),
-        };
-
-        cfg.warn_if_no_litestream();
-
-        let output = writer.contents();
-        assert!(
-            !output.contains("Litestream"),
-            "expected NO warning when litestream_replica_url is set, got: {output:?}"
-        );
-    }
-
-    #[test]
-    fn pg_backend_skips_without_url() {
+    #[tokio::test]
+    async fn pg_integration_skips_without_url() {
         let url = std::env::var("RUSTERP_POSTGRES_URL")
             .ok()
             .unwrap_or_default();
@@ -517,8 +182,11 @@ mod tests {
             eprintln!("skipping Postgres integration test: RUSTERP_POSTGRES_URL not set");
             return;
         }
-        let storage = PostgresStorage::new(url);
-        assert_eq!(storage.backend_kind(), BackendKind::Postgres);
-        assert!(storage.ping().is_ok());
+        let cfg = StorageConfig {
+            postgres_url: url,
+            ..StorageConfig::default()
+        };
+        let (storage, _pool) = bootstrap(&cfg).await.expect("bootstrap");
+        storage.ping().await.expect("ping");
     }
 }

@@ -9,6 +9,10 @@ homepage.workspace = true
 authors.workspace = true
 
 [dependencies]
+async-trait = "0.1"
 rusterp-modules = { path = "../rusterp-modules" }
+sqlx = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

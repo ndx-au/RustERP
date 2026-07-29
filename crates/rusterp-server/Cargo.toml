@@ -1,6 +1,6 @@
 [package]
 name = "rusterp-server"
-description = "Thin gRPC server binary for RustERP (Parties + Health, in-memory)"
+description = "gRPC server binary for RustERP (Parties + Health, PostgreSQL)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,6 +13,7 @@ name = "rusterp-server"
 path = "src/main.rs"
 
 [dependencies]
+async-trait = "0.1"
 rusterp-parties = { path = "../rusterp-parties" }
 rusterp-proto = { path = "../rusterp-proto" }
 rusterp-storage = { path = "../rusterp-storage" }

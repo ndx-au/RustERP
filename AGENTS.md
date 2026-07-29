@@ -24,6 +24,11 @@ for SMBs.
 5. **Single-tenant, API-first.** No multi-tenant shortcuts. UIs are separate
    gRPC consumers — do not smuggle server-side UI frameworks into platform crates
    without an explicit Spec.
+6. **Public repo — no secrets in git.** This repository is public. Never commit
+   credentials, connection URIs with real passwords, API keys, `.env` files, or
+   machine-specific config that embeds secrets. Use env vars or local-only files
+   (see [Local-only paths](#local-only-paths-never-commit)); commit only
+   placeholders via [`rusterp-server.toml.example`](./rusterp-server.toml.example).
 
 ## Locked architecture (do not quietly reverse)
 
@@ -33,9 +38,9 @@ for SMBs.
 | API | Headless gRPC + protobufs (`proto/`, package style `rusterp.<area>.v1`) |
 | Browser transport | **Dual-mode server:** TCP gRPC (`RUSTERP_LISTEN`, default `:50051`) for API tools; HTTP + **slozhn** gRPC-over-WebSocket (`RUSTERP_HTTP_LISTEN`, default `:8123`, path `/rpc`) for egui WASM UI |
 | Reference UI | **Separate repo** [RustERP-UI-WASM](https://github.com/ndx-video/RustERP-UI-WASM) — consumer only; never embed UI in core crates |
-| Server config | Optional `rusterp-server.toml` (`RUSTERP_CONFIG`): TCP/HTTP listen, `static_dir`, port-conflict policy |
+| Server config | Optional **local** `rusterp-server.toml` (`RUSTERP_CONFIG`): listen, `static_dir`, port policy, `postgres_url` — **gitignored**; copy from [`rusterp-server.toml.example`](./rusterp-server.toml.example) |
 | Port conflicts | Default **clobber**: restart prior self via pidfile, then free port; alternative **fail** |
-| Storage | Traits over **SQLite + Litestream** (default/recommended) and **PostgreSQL** |
+| Storage | **PostgreSQL** via sqlx (connection pool + migrations) |
 | Authz | Classic RBAC (Users / Groups / Roles / `resource:action`); OIDC later |
 | Modularity | Snug-fit activation of **functional domains** via module registry |
 | Crate naming | `rusterp-*` under `crates/` |
@@ -68,7 +73,7 @@ dist/
   rusterp, rusterp-lib.sh  installer helper CLI
   test-dist.sh             offline installer smoke
 crates/
-  rusterp-storage/         storage traits + SQLite (rusqlite) / PostgreSQL (tokio-postgres) backends
+  rusterp-storage/         PostgreSQL storage (sqlx pool + migrations)
   rusterp-modules/         functional module registry / activation
   rusterp-parties/         Parties domain (customers/suppliers/prospects/contacts)
   rusterp-proto/           tonic/prost codegen from proto/
@@ -77,6 +82,8 @@ crates/
     src/http.rs            axum + slozhn WebSocket /rpc + ServeDir static
     src/port_guard.rs      listen-port clobber/fail policy
 proto/                     protobuf conventions and .proto sources
+docs/
+  schema.md                PostgreSQL domain schema reference + ERD
 .local/                    runtime pid/log (gitignored; created at deploy/run)
 .nucleus/                  Nucleus local state (gitignored entire tree)
 .out/                      agent turn dumps (gitignored)
@@ -126,11 +133,10 @@ claims). Prefer small, reviewable diffs.
   protos until a Spec calls for real behavior.
 - **Domain crates land when the domain lands.** Do not add empty
   parties/catalog/sales/… crates “for later” unless the Spec says so.
-- **Storage:** real backends implemented in `rusterp-storage`:
-  SQLite (rusqlite 0.40, bundled) is default, PostgreSQL (tokio-postgres 0.7,
-  plaintext) is alternative. Both implement `Storage::ping()` via `SELECT 1`.
-  Litestream is an ops path — the server warns at startup when SQLite is
-  selected without Litestream configured.
+- **Storage:** PostgreSQL via sqlx in `rusterp-storage`: tuned connection pool,
+  embedded migrations (`migrations/0001`–`0009`), domain schemas (`party`, `sales`, …).
+  See [docs/schema.md](./docs/schema.md). Server requires `postgres_url`
+  (`RUSTERP_POSTGRES_URL` or `[storage]` in gitignored config).
 - **Protos:** definitions under `proto/`; codegen/server wiring only when Spec’d.
 - **HTTP/UI transport:** keep axum/slozhn/static serving in `rusterp-server` only;
   do not pull egui/eframe into core crates. UI changes belong in RustERP-UI-WASM.
@@ -138,6 +144,26 @@ claims). Prefer small, reviewable diffs.
   (`build_grpc_routes` / in-memory repo) — no divergent handlers per transport.
 - **Edition:** 2021 workspace default unless a Spec changes it.
 - **Commits:** contributors use DCO (`Signed-off-by`) per CONTRIBUTING.md.
+
+## Local-only paths (never commit)
+
+This is a **public** repository. The following stay on disk for dev/deploy but
+must **never** appear in git (tracked or in history):
+
+| Path | Gitignored? | Purpose |
+|------|-------------|---------|
+| `rusterp-server.toml` | **yes** | Live server config: listen addresses, `static_dir`, **`postgres_url`**, pool tuning. Copy from [`rusterp-server.toml.example`](./rusterp-server.toml.example) and fill in locally, or use `RUSTERP_POSTGRES_URL` / `RUSTERP_*` env vars instead. |
+| `.local/` | **yes** | Runtime pid/log from deploy |
+| `.nucleus/` | **yes** | Nucleus honesty-loop state |
+| `.out/` | **yes** | Agent turn dumps |
+
+**Committed template only:** [`rusterp-server.toml.example`](./rusterp-server.toml.example)
+— placeholder values (`user:pass@127.0.0.1`, etc.), safe to publish.
+
+**Do not commit:** real database passwords, host-specific URIs with secrets,
+`.env` files, pgAdmin credentials, or pasted output from `/opt/pg-lab/.env` or
+similar ops paths. Prefer `RUSTERP_POSTGRES_URL` in the shell environment for
+one-off dev commands.
 
 ## Nucleus paths in this repo
 
