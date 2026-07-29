@@ -15,7 +15,7 @@ documentation, and project news live on the official site.
 | | |
 |--|--|
 | **Website** | [RustERP.biz](https://RustERP.biz) |
-| **Source** | [github.com/ndx-video/RustERP](https://github.com/ndx-video/RustERP) |
+| **Source** | [github.com/ndx-au/RustERP](https://github.com/ndx-au/RustERP) |
 | **Contributing** | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 
 ## Architecture decisions
@@ -71,7 +71,7 @@ in-memory repository for tests. Catalog, Sales, Payments, and Inventory crates
 are not present yet.
 
 **Reference UI** lives in a **separate repository**:
-[RustERP-UI-WASM](https://github.com/ndx-video/RustERP-UI-WASM) (egui/eframe
+[RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM) (egui/eframe
 WASM + native client). It consumes the core over **slozhn** gRPC-over-WebSocket
 at `/rpc` — never embed UI code in this repo.
 
@@ -187,7 +187,7 @@ is unset.
 
 ### Reference UI (separate repo)
 
-The egui WASM/native shell is **[RustERP-UI-WASM](https://github.com/ndx-video/RustERP-UI-WASM)**.
+The egui WASM/native shell is **[RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM)**.
 It talks to this core over slozhn at `/rpc` (default `ws://127.0.0.1:8123/rpc` for
 native dev). Privacy browsers may block WebGL/canvas until the user allows it
 via the address-bar permission icon — the UI shows a Macaron-style troubleshooting
@@ -249,7 +249,7 @@ See [proto/README.md](./proto/README.md).
 
 Self-host / LXC path for the **core** server (single-tenant). **Source
 install** — needs **git**, **stable Rust (`cargo`)**, and **`protoc`**. Does **not**
-auto-install toolchains. The reference UI ([RustERP-UI-WASM](https://github.com/ndx-video/RustERP-UI-WASM))
+auto-install toolchains. The reference UI ([RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM))
 is a separate checkout; use [`dist/deploy-ui-stack.sh`](./dist/deploy-ui-stack.sh)
 or serve WASM into `dist/ui/` manually.
 
@@ -264,7 +264,7 @@ Linux and macOS. Installs only `rusterp` under a user-local prefix by default
 ./install.sh
 
 # or remote bootstrap of the CLI only:
-curl -fsSL https://raw.githubusercontent.com/ndx-video/RustERP/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ndx-au/RustERP/main/install.sh | bash
 ```
 
 Ensure `~/.local/bin` is on `PATH` if needed.
@@ -306,7 +306,7 @@ the HTTP/slozhn leg and static WASM, run `rusterp-server` with
 `RUSTERP_HTTP_LISTEN`.
 
 **Persistence is in-memory. Authentication is not enforced.** Point the separate
-[RustERP-UI-WASM](https://github.com/ndx-video/RustERP-UI-WASM) client or
+[RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM) client or
 `grpcurl` at the listen addresses when ready.
 
 ### Terraform-oriented environment

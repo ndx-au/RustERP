@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ./install.sh
-#   curl -fsSL https://raw.githubusercontent.com/ndx-video/RustERP/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ndx-au/RustERP/main/install.sh | bash
 #
 # Then:
 #   rusterp install core [--branch dist]
@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-DEFAULT_REPO_RAW="https://raw.githubusercontent.com/ndx-video/RustERP"
+DEFAULT_REPO_RAW="https://raw.githubusercontent.com/ndx-au/RustERP"
 BOOTSTRAP_REF="${RUSTERP_BOOTSTRAP_REF:-main}"
 REPO_RAW_BASE="${RUSTERP_REPO_RAW_BASE:-$DEFAULT_REPO_RAW}"
 

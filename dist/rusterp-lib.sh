@@ -9,7 +9,7 @@
 RUSTERP_DEFAULT_CORE_BRANCH="${RUSTERP_DEFAULT_CORE_BRANCH:-dist}"
 
 # Upstream clone URL (override for forks / airgap mirrors).
-RUSTERP_REPO_URL="${RUSTERP_REPO_URL:-https://github.com/ndx-video/RustERP.git}"
+RUSTERP_REPO_URL="${RUSTERP_REPO_URL:-https://github.com/ndx-au/RustERP.git}"
 
 rusterp_default_home() {
   if [ -n "${RUSTERP_HOME:-}" ]; then

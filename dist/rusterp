@@ -39,7 +39,7 @@ Commands:
 Environment:
   RUSTERP_HOME       Install prefix (default: ~/.local/share/rusterp, or /opt/rusterp as root)
   RUSTERP_BIN_DIR    CLI bin dir used by install.sh (default: ~/.local/bin or /usr/local/bin)
-  RUSTERP_REPO_URL   Git remote (default: https://github.com/ndx-video/RustERP.git)
+  RUSTERP_REPO_URL   Git remote (default: https://github.com/ndx-au/RustERP.git)
   RUSTERP_LISTEN     gRPC listen for run-core (default: 127.0.0.1:50051)
 
 Prerequisites for install core: git, cargo (stable Rust), protoc.

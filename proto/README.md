@@ -1,7 +1,7 @@
 # Protobuf / gRPC layout
 
 RustERP is **API-first and headless**. External clients (including the Macaron-style
-egui WASM UI in [RustERP-UI-WASM](https://github.com/ndx-video/RustERP-UI-WASM))
+egui WASM UI in [RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM))
 consume **gRPC** services defined here as Protocol Buffers.
 
 ## Transport

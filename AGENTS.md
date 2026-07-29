@@ -6,7 +6,7 @@ repository.
 **Product:** RustERP by NDX Pty Ltd — modular, snug-fit, open-source ERP in Rust
 for SMBs.  
 **Site:** https://RustERP.biz  
-**Source:** https://github.com/ndx-video/RustERP  
+**Source:** https://github.com/ndx-au/RustERP  
 **License:** Apache-2.0 — see [LICENSE](./LICENSE), [NOTICE](./NOTICE),
 [CONTRIBUTING.md](./CONTRIBUTING.md).
 
@@ -37,7 +37,7 @@ for SMBs.
 | Tenancy | Single-tenant; self-host / LXC-container isolation preferred |
 | API | Headless gRPC + protobufs (`proto/`, package style `rusterp.<area>.v1`) |
 | Browser transport | **Dual-mode server:** TCP gRPC (`RUSTERP_LISTEN`, default `:50051`) for API tools; HTTP + **slozhn** gRPC-over-WebSocket (`RUSTERP_HTTP_LISTEN`, default `:8123`, path `/rpc`) for egui WASM UI |
-| Reference UI | **Separate repo** [RustERP-UI-WASM](https://github.com/ndx-video/RustERP-UI-WASM) — consumer only; never embed UI in core crates |
+| Reference UI | **Separate repo** [RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM) — consumer only; never embed UI in core crates |
 | Server config | Optional **local** `rusterp-server.toml` (`RUSTERP_CONFIG`): listen, `static_dir`, port policy, `postgres_url` — **gitignored**; copy from [`rusterp-server.toml.example`](./rusterp-server.toml.example) |
 | Port conflicts | Default **clobber**: restart prior self via pidfile, then free port; alternative **fail** |
 | Storage | **PostgreSQL** via sqlx (connection pool + migrations) |
