@@ -66,23 +66,24 @@ proto/                     gRPC/protobuf conventions and .proto defs
 ```
 
 **Parties** is the first landed functional domain crate (`rusterp-parties`):
-customers, suppliers, prospects (multi-role party model) and contacts, with an
-in-memory repository for tests. Catalog, Sales, Payments, and Inventory crates
-are not present yet.
+customers, suppliers, prospects (multi-role party model) and contacts. Production
+uses [`PostgresPartyRepository`](crates/rusterp-parties/src/postgres.rs); tests also
+have an in-memory repository. Catalog, Sales, Payments, and Inventory crates land
+per the [product roadmap](./docs/ROADMAP.md).
 
 **Reference UI** lives in a **separate repository**:
 [RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM) (egui/eframe
 WASM + native client). It consumes the core over **slozhn** gRPC-over-WebSocket
 at `/rpc` — never embed UI code in this repo.
 
-**gRPC (Phase 2):** `rusterp-server` exposes `rusterp.party.v1.PartyService` and
-`rusterp.platform.v1.HealthService` over the in-memory party store. **Persistence
-is not durable** and **authentication is not enforced**. Generated types live in
-`rusterp-proto` (sources under `proto/`).
+**gRPC:** `rusterp-server` exposes `rusterp.party.v1.PartyService` and
+`rusterp.platform.v1.HealthService` backed by PostgreSQL. **Authentication is not
+enforced yet.** Generated types live in `rusterp-proto` (sources under `proto/`).
+Schema reference: [`docs/schema.md`](./docs/schema.md).
 
 ### Dual transport (Macaron-aligned)
 
-`rusterp-server` runs **two listeners** in one process (shared in-memory state):
+`rusterp-server` runs **two listeners** in one process (shared Postgres-backed state):
 
 ```text
 Browser / WASM UI ──► HTTP :8123 ──► GET /          static WASM (dist/ui/)
@@ -305,9 +306,10 @@ the HTTP/slozhn leg and static WASM, run `rusterp-server` with
 `rusterp-server.toml` (see [Run the server](#run-the-server) above) or set
 `RUSTERP_HTTP_LISTEN`.
 
-**Persistence is in-memory. Authentication is not enforced.** Point the separate
-[RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM) client or
-`grpcurl` at the listen addresses when ready.
+**Party data is persisted in PostgreSQL. Authentication is not enforced yet.**
+Point the separate [RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM)
+client or `grpcurl` at the listen addresses when ready. Set `RUSTERP_POSTGRES_URL`
+(or `[storage].postgres_url` in config).
 
 ### Terraform-oriented environment
 

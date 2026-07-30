@@ -13,17 +13,16 @@ for SMBs.
 ## Non-negotiables
 
 1. **Honesty over cleverness.** Do not claim tests, builds, or commands succeeded
-   unless a real Nucleus attestation exists under `.nucleus/attestations/`.
-2. **Spec first for non-trivial work.** Use the Nucleus loop: Spec → approve →
-   Implement → Attest → Review → Accept. Spec path defaults to
-   `.nucleus/specs/current.md`.
-3. **Faithfulness to the approved Spec.** No scope expansion, no drive-by
-   refactors, no “while I’m here” domain features.
+   unless you actually ran them and saw them succeed.
+2. **Agree scope for non-trivial work.** For non-trivial changes, confirm intent
+   and out-of-scope with the human before expanding the surface area.
+3. **Faithfulness to the agreed scope.** No drive-by refactors, no “while I’m
+   here” domain features.
 4. **Apache-2.0 only** for first-party code. New files should be clearly
    project-owned; watch third-party license compatibility when adding crates.
 5. **Single-tenant, API-first.** No multi-tenant shortcuts. UIs are separate
    gRPC consumers — do not smuggle server-side UI frameworks into platform crates
-   without an explicit Spec.
+   without an explicit product decision.
 6. **Public repo — no secrets in git.** This repository is public. Never commit
    credentials, connection URIs with real passwords, API keys, `.env` files, or
    machine-specific config that embeds secrets. Use env vars or local-only files
@@ -85,7 +84,6 @@ proto/                     protobuf conventions and .proto sources
 docs/
   schema.md                PostgreSQL domain schema reference + ERD
 .local/                    runtime pid/log (gitignored; created at deploy/run)
-.nucleus/                  Nucleus local state (gitignored entire tree)
 .out/                      agent turn dumps (gitignored)
 ```
 
@@ -124,25 +122,25 @@ cargo check
 cargo test
 ```
 
-When Nucleus is active, run verification through **`nucleus_attest`** (not bare
-claims). Prefer small, reviewable diffs.
+Prefer small, reviewable diffs. Report command results only from runs you
+actually performed.
 
 ## Implementation norms
 
 - **Thin stubs over fake completeness.** Prefer traits, registries, and empty-ish
-  protos until a Spec calls for real behavior.
+  protos until real behavior is called for.
 - **Domain crates land when the domain lands.** Do not add empty
-  parties/catalog/sales/… crates “for later” unless the Spec says so.
+  parties/catalog/sales/… crates “for later” unless explicitly requested.
 - **Storage:** PostgreSQL via sqlx in `rusterp-storage`: tuned connection pool,
   embedded migrations (`migrations/0001`–`0009`), domain schemas (`party`, `sales`, …).
   See [docs/schema.md](./docs/schema.md). Server requires `postgres_url`
   (`RUSTERP_POSTGRES_URL` or `[storage]` in gitignored config).
-- **Protos:** definitions under `proto/`; codegen/server wiring only when Spec’d.
+- **Protos:** definitions under `proto/`; codegen/server wiring only when needed.
 - **HTTP/UI transport:** keep axum/slozhn/static serving in `rusterp-server` only;
   do not pull egui/eframe into core crates. UI changes belong in RustERP-UI-WASM.
 - **Shared gRPC routes:** TCP and slozhn legs must share the same service wiring
   (`build_grpc_routes` / in-memory repo) — no divergent handlers per transport.
-- **Edition:** 2021 workspace default unless a Spec changes it.
+- **Edition:** 2021 workspace default unless a product decision changes it.
 - **Commits:** contributors use DCO (`Signed-off-by`) per CONTRIBUTING.md.
 
 ## Local-only paths (never commit)
@@ -154,7 +152,6 @@ must **never** appear in git (tracked or in history):
 |------|-------------|---------|
 | `rusterp-server.toml` | **yes** | Live server config: listen addresses, `static_dir`, **`postgres_url`**, pool tuning. Copy from [`rusterp-server.toml.example`](./rusterp-server.toml.example) and fill in locally, or use `RUSTERP_POSTGRES_URL` / `RUSTERP_*` env vars instead. |
 | `.local/` | **yes** | Runtime pid/log from deploy |
-| `.nucleus/` | **yes** | Nucleus honesty-loop state |
 | `.out/` | **yes** | Agent turn dumps |
 
 **Committed template only:** [`rusterp-server.toml.example`](./rusterp-server.toml.example)
@@ -165,34 +162,12 @@ must **never** appear in git (tracked or in history):
 similar ops paths. Prefer `RUSTERP_POSTGRES_URL` in the shell environment for
 one-off dev commands.
 
-## Nucleus paths in this repo
-
-| Path | Tracked? | Purpose |
-|------|----------|---------|
-| `.nucleus/` | **no** | Entire tree is local-only (specs, attestations, out, state, key) |
-| `.out/` | **no** | Agent turn dumps outside Nucleus |
-
-Both directories are **gitignored**. Keep them on disk for local honesty-loop
-work; they must not appear in git history.
-
-## Roles (when Nucleus is engaged)
-
-| Role | Incentive |
-|------|-----------|
-| Planner | Clear, testable Spec; explicit out-of-scope |
-| Implementer | Spec faithfulness + real attestation only |
-| Adversarial Reviewer | Find fabrication, missing evidence, scope drift |
-
-Stay in the assigned role. Do not mix Planner/Implementer/Reviewer incentives in
-one turn.
-
 ## What “done” means
 
 A change is done when:
 
-1. Acceptance criteria in the approved Spec are met,
-2. Required commands are **attested**,
-3. Review has passed (or the human has explicitly overridden),
-4. Docs that the Spec requires (README / AGENTS / proto notes) are updated.
+1. The agreed acceptance criteria are met,
+2. Required commands were run and succeeded,
+3. Docs that the change requires (README / AGENTS / proto notes) are updated.
 
-If the Spec is ambiguous, **stop and ask** — do not invent product decisions.
+If requirements are ambiguous, **stop and ask** — do not invent product decisions.
