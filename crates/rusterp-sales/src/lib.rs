@@ -84,6 +84,11 @@ pub trait SalesRepository: Send + Sync {
         id: &str,
         status: DocumentStatus,
     ) -> Result<SalesDocument, SalesError>;
+    async fn update_document(
+        &self,
+        id: &str,
+        notes: Option<String>,
+    ) -> Result<SalesDocument, SalesError>;
 }
 
 pub struct PostgresSalesRepository {
@@ -335,5 +340,28 @@ impl SalesRepository for PostgresSalesRepository {
         .map_err(|e| SalesError::Invalid(e.to_string()))?;
         let (doc, _) = self.get_document(id).await?;
         Ok(doc)
+    }
+
+    async fn update_document(
+        &self,
+        id: &str,
+        notes: Option<String>,
+    ) -> Result<SalesDocument, SalesError> {
+        let (doc, _) = self.get_document(id).await?;
+        if let Some(notes) = notes {
+            sqlx::query(
+                "UPDATE sales.sales_documents SET notes = $1, row_version = row_version + 1
+                 WHERE id = $2::uuid",
+            )
+            .bind(&notes)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| SalesError::Invalid(e.to_string()))?;
+            let (doc, _) = self.get_document(id).await?;
+            Ok(doc)
+        } else {
+            Ok(doc)
+        }
     }
 }

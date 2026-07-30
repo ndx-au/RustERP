@@ -71,9 +71,15 @@ message SetSalesDocumentStatusRequest {
   DocumentStatus status = 2;
 }
 
+message UpdateSalesDocumentRequest {
+  string id = 1;
+  optional string notes = 2;
+}
+
 service SalesService {
   rpc CreateSalesDocument(CreateSalesDocumentRequest) returns (SalesDocument);
   rpc ListSalesDocuments(ListSalesDocumentsRequest) returns (ListSalesDocumentsResponse);
   rpc GetSalesDocument(GetSalesDocumentRequest) returns (GetSalesDocumentResponse);
   rpc SetSalesDocumentStatus(SetSalesDocumentStatusRequest) returns (SalesDocument);
+  rpc UpdateSalesDocument(UpdateSalesDocumentRequest) returns (SalesDocument);
 }

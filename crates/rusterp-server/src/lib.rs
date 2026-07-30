@@ -8,9 +8,10 @@ use rusterp_auth::{AuthRepository, ModuleStore};
 use rusterp_catalog::CatalogRepository;
 use rusterp_inventory::InventoryRepository;
 use rusterp_parties::{
-    Address as DomainAddress, AddressKind as DomainAddressKind, Contact as DomainContact,
-    InMemoryPartyRepository, NewAddress, NewContact, NewParty, Party as DomainParty, PartyError,
-    PartyRepository, PartyRole as DomainRole, PartyUpdate,
+    Address as DomainAddress, AddressKind as DomainAddressKind, AddressUpdate,
+    Contact as DomainContact, ContactUpdate, InMemoryPartyRepository, NewAddress, NewContact,
+    NewParty, Party as DomainParty, PartyError, PartyRepository, PartyRole as DomainRole,
+    PartyUpdate,
 };
 use rusterp_payments::PaymentsRepository;
 use rusterp_proto::FILE_DESCRIPTOR_SET;
@@ -19,7 +20,8 @@ use rusterp_proto::party::v1::{
     party_service_server::PartyServiceServer, AddAddressRequest, AddContactRequest, Address,
     AddressKind, Contact, CreatePartyRequest, GetPartyRequest, ListAddressesRequest,
     ListAddressesResponse, ListContactsRequest, ListContactsResponse, ListPartiesRequest,
-    ListPartiesResponse, Party, PartyRole, UpdatePartyRequest,
+    ListPartiesResponse, Party, PartyRole, UpdateAddressRequest, UpdateContactRequest,
+    UpdatePartyRequest,
 };
 use rusterp_proto::platform::v1::auth_service_server::AuthServiceServer;
 use rusterp_proto::platform::v1::health_service_server::{HealthService, HealthServiceServer};
@@ -191,6 +193,7 @@ fn contact_to_proto(c: DomainContact) -> Contact {
         name: c.name,
         email: c.email,
         phone: c.phone,
+        active: c.active,
     }
 }
 
@@ -222,6 +225,7 @@ fn address_to_proto(a: DomainAddress) -> Address {
         state_region: a.state_region,
         postal_code: a.postal_code,
         country: a.country,
+        active: a.active,
     }
 }
 
@@ -353,6 +357,28 @@ impl PartyService for PartySvc {
         Ok(Response::new(ListContactsResponse { contacts }))
     }
 
+    async fn update_contact(
+        &self,
+        request: Request<UpdateContactRequest>,
+    ) -> Result<Response<Contact>, Status> {
+        check_write_auth(request.metadata(), &self.auth).await?;
+        let req = request.into_inner();
+        let contact = self
+            .repo
+            .update_contact(
+                &req.id,
+                ContactUpdate {
+                    name: req.name,
+                    email: req.email.map(Some),
+                    phone: req.phone.map(Some),
+                    active: req.active,
+                },
+            )
+            .await
+            .map_err(map_party_error)?;
+        Ok(Response::new(contact_to_proto(contact)))
+    }
+
     async fn add_address(
         &self,
         request: Request<AddAddressRequest>,
@@ -398,6 +424,42 @@ impl PartyService for PartySvc {
             .map(address_to_proto)
             .collect();
         Ok(Response::new(ListAddressesResponse { addresses }))
+    }
+
+    async fn update_address(
+        &self,
+        request: Request<UpdateAddressRequest>,
+    ) -> Result<Response<Address>, Status> {
+        check_write_auth(request.metadata(), &self.auth).await?;
+        let req = request.into_inner();
+        let kind = if let Some(k) = req.kind {
+            Some(
+                kind_from_proto(
+                    AddressKind::try_from(k)
+                        .map_err(|_| Status::invalid_argument(format!("unknown address kind: {k}")))?,
+                )?,
+            )
+        } else {
+            None
+        };
+        let address = self
+            .repo
+            .update_address(
+                &req.id,
+                AddressUpdate {
+                    kind,
+                    line1: req.line1,
+                    line2: req.line2.map(Some),
+                    city: req.city,
+                    state_region: req.state_region.map(Some),
+                    postal_code: req.postal_code.map(Some),
+                    country: req.country,
+                    active: req.active,
+                },
+            )
+            .await
+            .map_err(map_party_error)?;
+        Ok(Response::new(address_to_proto(address)))
     }
 }
 
@@ -756,6 +818,9 @@ mod tests {
         async fn create_user(&self, _: String, _: String, _: String) -> Result<rusterp_auth::UserInfo, rusterp_auth::AuthError> {
             Err(rusterp_auth::AuthError::Invalid("stub".into()))
         }
+        async fn update_user(&self, _: &str, _: Option<String>, _: Option<bool>, _: Option<String>) -> Result<rusterp_auth::UserInfo, rusterp_auth::AuthError> {
+            Err(rusterp_auth::AuthError::Invalid("stub".into()))
+        }
         async fn user_login_active(&self, _: &str) -> Result<bool, rusterp_auth::AuthError> { Ok(false) }
     }
     #[async_trait::async_trait]
@@ -773,10 +838,16 @@ mod tests {
             Err(rusterp_catalog::CatalogError::Invalid("stub".into()))
         }
         async fn list_products(&self) -> Result<Vec<rusterp_catalog::Product>, rusterp_catalog::CatalogError> { Ok(vec![]) }
+        async fn update_product(&self, _: &str, _: rusterp_catalog::ProductUpdate) -> Result<rusterp_catalog::Product, rusterp_catalog::CatalogError> {
+            Err(rusterp_catalog::CatalogError::Invalid("stub".into()))
+        }
         async fn create_category(&self, _: rusterp_catalog::NewCategory) -> Result<rusterp_catalog::Category, rusterp_catalog::CatalogError> {
             Err(rusterp_catalog::CatalogError::Invalid("stub".into()))
         }
         async fn list_categories(&self) -> Result<Vec<rusterp_catalog::Category>, rusterp_catalog::CatalogError> { Ok(vec![]) }
+        async fn update_category(&self, _: &str, _: rusterp_catalog::CategoryUpdate) -> Result<rusterp_catalog::Category, rusterp_catalog::CatalogError> {
+            Err(rusterp_catalog::CatalogError::Invalid("stub".into()))
+        }
     }
 
     struct StubSales;
@@ -792,6 +863,9 @@ mod tests {
         async fn set_status(&self, _: &str, _: rusterp_sales::DocumentStatus) -> Result<rusterp_sales::SalesDocument, rusterp_sales::SalesError> {
             Err(rusterp_sales::SalesError::Invalid("stub".into()))
         }
+        async fn update_document(&self, _: &str, _: Option<String>) -> Result<rusterp_sales::SalesDocument, rusterp_sales::SalesError> {
+            Err(rusterp_sales::SalesError::Invalid("stub".into()))
+        }
     }
 
     struct StubPayments;
@@ -801,10 +875,16 @@ mod tests {
             Err(rusterp_payments::PaymentError::Invalid("stub".into()))
         }
         async fn list_bank_accounts(&self) -> Result<Vec<rusterp_payments::BankAccount>, rusterp_payments::PaymentError> { Ok(vec![]) }
+        async fn update_bank_account(&self, _: &str, _: Option<String>, _: Option<String>, _: Option<bool>) -> Result<rusterp_payments::BankAccount, rusterp_payments::PaymentError> {
+            Err(rusterp_payments::PaymentError::Invalid("stub".into()))
+        }
         async fn create_payment(&self, _: rusterp_payments::PaymentDirection, _: String, _: Option<String>, _: i64, _: String, _: String) -> Result<rusterp_payments::Payment, rusterp_payments::PaymentError> {
             Err(rusterp_payments::PaymentError::Invalid("stub".into()))
         }
         async fn list_payments(&self) -> Result<Vec<rusterp_payments::Payment>, rusterp_payments::PaymentError> { Ok(vec![]) }
+        async fn update_payment(&self, _: &str, _: Option<String>, _: Option<Option<String>>) -> Result<rusterp_payments::Payment, rusterp_payments::PaymentError> {
+            Err(rusterp_payments::PaymentError::Invalid("stub".into()))
+        }
         async fn create_allocation(&self, _: String, _: String, _: i64) -> Result<rusterp_payments::PaymentAllocation, rusterp_payments::PaymentError> {
             Err(rusterp_payments::PaymentError::Invalid("stub".into()))
         }
@@ -819,6 +899,9 @@ mod tests {
             Err(rusterp_inventory::InventoryError::Disabled)
         }
         async fn list_warehouses(&self) -> Result<Vec<rusterp_inventory::Warehouse>, rusterp_inventory::InventoryError> { Ok(vec![]) }
+        async fn update_warehouse(&self, _: &str, _: Option<String>, _: Option<String>, _: Option<bool>) -> Result<rusterp_inventory::Warehouse, rusterp_inventory::InventoryError> {
+            Err(rusterp_inventory::InventoryError::Disabled)
+        }
         async fn list_stock_levels(&self, _: Option<String>) -> Result<Vec<rusterp_inventory::StockLevel>, rusterp_inventory::InventoryError> { Ok(vec![]) }
         async fn create_stock_move(&self, _: String, _: String, _: Option<String>, _: Option<String>) -> Result<rusterp_inventory::StockMove, rusterp_inventory::InventoryError> {
             Err(rusterp_inventory::InventoryError::Disabled)

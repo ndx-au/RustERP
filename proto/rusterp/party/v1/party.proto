@@ -37,6 +37,7 @@ message Contact {
   string name = 3;
   optional string email = 4;
   optional string phone = 5;
+  bool active = 6;
 }
 
 message Address {
@@ -49,6 +50,7 @@ message Address {
   optional string state_region = 7;
   optional string postal_code = 8;
   string country = 9;
+  bool active = 10;
 }
 
 message CreatePartyRequest {
@@ -111,6 +113,26 @@ message ListAddressesResponse {
   repeated Address addresses = 1;
 }
 
+message UpdateContactRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string email = 3;
+  optional string phone = 4;
+  optional bool active = 5;
+}
+
+message UpdateAddressRequest {
+  string id = 1;
+  optional AddressKind kind = 2;
+  optional string line1 = 3;
+  optional string line2 = 4;
+  optional string city = 5;
+  optional string state_region = 6;
+  optional string postal_code = 7;
+  optional string country = 8;
+  optional bool active = 9;
+}
+
 service PartyService {
   rpc CreateParty(CreatePartyRequest) returns (Party);
   rpc GetParty(GetPartyRequest) returns (Party);
@@ -118,6 +140,8 @@ service PartyService {
   rpc UpdateParty(UpdatePartyRequest) returns (Party);
   rpc AddContact(AddContactRequest) returns (Contact);
   rpc ListContacts(ListContactsRequest) returns (ListContactsResponse);
+  rpc UpdateContact(UpdateContactRequest) returns (Contact);
   rpc AddAddress(AddAddressRequest) returns (Address);
   rpc ListAddresses(ListAddressesRequest) returns (ListAddressesResponse);
+  rpc UpdateAddress(UpdateAddressRequest) returns (Address);
 }

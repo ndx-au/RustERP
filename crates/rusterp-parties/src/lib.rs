@@ -103,6 +103,7 @@ pub struct Contact {
     pub name: String,
     pub email: Option<String>,
     pub phone: Option<String>,
+    pub active: bool,
 }
 
 /// Input for attaching a contact to a party.
@@ -111,6 +112,15 @@ pub struct NewContact {
     pub name: String,
     pub email: Option<String>,
     pub phone: Option<String>,
+}
+
+/// Patch for updating a contact.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ContactUpdate {
+    pub name: Option<String>,
+    pub email: Option<Option<String>>,
+    pub phone: Option<Option<String>>,
+    pub active: Option<bool>,
 }
 
 /// Address kind for a party address.
@@ -133,6 +143,7 @@ pub struct Address {
     pub state_region: Option<String>,
     pub postal_code: Option<String>,
     pub country: String,
+    pub active: bool,
 }
 
 /// Input for attaching an address to a party.
@@ -145,6 +156,19 @@ pub struct NewAddress {
     pub state_region: Option<String>,
     pub postal_code: Option<String>,
     pub country: String,
+}
+
+/// Patch for updating an address.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AddressUpdate {
+    pub kind: Option<AddressKind>,
+    pub line1: Option<String>,
+    pub line2: Option<Option<String>>,
+    pub city: Option<String>,
+    pub state_region: Option<Option<String>>,
+    pub postal_code: Option<Option<String>>,
+    pub country: Option<String>,
+    pub active: Option<bool>,
 }
 
 /// Repository / domain errors.
@@ -181,9 +205,11 @@ pub trait PartyRepository: Send + Sync {
 
     async fn add_contact(&self, party_id: &str, new: NewContact) -> Result<Contact, PartyError>;
     async fn list_contacts(&self, party_id: &str) -> Result<Vec<Contact>, PartyError>;
+    async fn update_contact(&self, id: &str, update: ContactUpdate) -> Result<Contact, PartyError>;
 
     async fn add_address(&self, party_id: &str, new: NewAddress) -> Result<Address, PartyError>;
     async fn list_addresses(&self, party_id: &str) -> Result<Vec<Address>, PartyError>;
+    async fn update_address(&self, id: &str, update: AddressUpdate) -> Result<Address, PartyError>;
 }
 
 /// In-memory [`PartyRepository`] for tests and early development.
@@ -320,6 +346,7 @@ impl PartyRepository for InMemoryPartyRepository {
             name,
             email: new.email,
             phone: new.phone,
+            active: true,
         };
         self.contacts
             .lock()
@@ -345,11 +372,39 @@ impl PartyRepository for InMemoryPartyRepository {
             .lock()
             .map_err(|e| PartyError::Invalid(format!("lock poisoned: {e}")))?
             .values()
-            .filter(|c| c.party_id == party_id)
+            .filter(|c| c.party_id == party_id && c.active)
             .cloned()
             .collect();
         list.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
         Ok(list)
+    }
+
+    async fn update_contact(&self, id: &str, update: ContactUpdate) -> Result<Contact, PartyError> {
+        let mut contacts = self
+            .contacts
+            .lock()
+            .map_err(|e| PartyError::Invalid(format!("lock poisoned: {e}")))?;
+        let contact = contacts.get_mut(id).ok_or_else(|| PartyError::NotFound {
+            entity: "contact",
+            id: id.to_string(),
+        })?;
+        if let Some(name) = update.name {
+            let name = name.trim().to_string();
+            if name.is_empty() {
+                return Err(PartyError::Invalid("contact name must not be empty".into()));
+            }
+            contact.name = name;
+        }
+        if let Some(email) = update.email {
+            contact.email = email;
+        }
+        if let Some(phone) = update.phone {
+            contact.phone = phone;
+        }
+        if let Some(active) = update.active {
+            contact.active = active;
+        }
+        Ok(contact.clone())
     }
 
     async fn add_address(&self, party_id: &str, new: NewAddress) -> Result<Address, PartyError> {
@@ -387,6 +442,7 @@ impl PartyRepository for InMemoryPartyRepository {
             state_region: new.state_region,
             postal_code: new.postal_code,
             country,
+            active: true,
         };
         self.addresses
             .lock()
@@ -412,11 +468,63 @@ impl PartyRepository for InMemoryPartyRepository {
             .lock()
             .map_err(|e| PartyError::Invalid(format!("lock poisoned: {e}")))?
             .values()
-            .filter(|a| a.party_id == party_id)
+            .filter(|a| a.party_id == party_id && a.active)
             .cloned()
             .collect();
         list.sort_by(|a, b| a.city.cmp(&b.city).then(a.id.cmp(&b.id)));
         Ok(list)
+    }
+
+    async fn update_address(&self, id: &str, update: AddressUpdate) -> Result<Address, PartyError> {
+        let mut addresses = self
+            .addresses
+            .lock()
+            .map_err(|e| PartyError::Invalid(format!("lock poisoned: {e}")))?;
+        let address = addresses.get_mut(id).ok_or_else(|| PartyError::NotFound {
+            entity: "address",
+            id: id.to_string(),
+        })?;
+        if let Some(kind) = update.kind {
+            address.kind = kind;
+        }
+        if let Some(line1) = update.line1 {
+            let line1 = line1.trim().to_string();
+            if line1.is_empty() {
+                return Err(PartyError::Invalid(
+                    "address line1 must not be empty".into(),
+                ));
+            }
+            address.line1 = line1;
+        }
+        if let Some(line2) = update.line2 {
+            address.line2 = line2;
+        }
+        if let Some(city) = update.city {
+            let city = city.trim().to_string();
+            if city.is_empty() {
+                return Err(PartyError::Invalid("address city must not be empty".into()));
+            }
+            address.city = city;
+        }
+        if let Some(state_region) = update.state_region {
+            address.state_region = state_region;
+        }
+        if let Some(postal_code) = update.postal_code {
+            address.postal_code = postal_code;
+        }
+        if let Some(country) = update.country {
+            let country = country.trim().to_uppercase();
+            if country.len() != 2 {
+                return Err(PartyError::Invalid(
+                    "country must be ISO 3166-1 alpha-2".into(),
+                ));
+            }
+            address.country = country;
+        }
+        if let Some(active) = update.active {
+            address.active = active;
+        }
+        Ok(address.clone())
     }
 }
 

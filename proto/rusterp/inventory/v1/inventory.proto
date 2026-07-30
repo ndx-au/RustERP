@@ -53,9 +53,17 @@ message CreateStockMoveRequest {
 message ListStockMovesRequest {}
 message ListStockMovesResponse { repeated StockMove moves = 1; }
 
+message UpdateWarehouseRequest {
+  string id = 1;
+  optional string code = 2;
+  optional string name = 3;
+  optional bool active = 4;
+}
+
 service InventoryService {
   rpc CreateWarehouse(CreateWarehouseRequest) returns (Warehouse);
   rpc ListWarehouses(ListWarehousesRequest) returns (ListWarehousesResponse);
+  rpc UpdateWarehouse(UpdateWarehouseRequest) returns (Warehouse);
   rpc ListStockLevels(ListStockLevelsRequest) returns (ListStockLevelsResponse);
   rpc CreateStockMove(CreateStockMoveRequest) returns (StockMove);
   rpc ListStockMoves(ListStockMovesRequest) returns (ListStockMovesResponse);

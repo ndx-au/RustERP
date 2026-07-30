@@ -7,8 +7,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    new_id, Address, AddressKind, Contact, NewAddress, NewContact, NewParty, Party, PartyError,
-    PartyRepository, PartyRole, PartyUpdate,
+    new_id, Address, AddressKind, AddressUpdate, Contact, ContactUpdate, NewAddress, NewContact,
+    NewParty, Party, PartyError, PartyRepository, PartyRole, PartyUpdate,
 };
 
 /// PostgreSQL-backed [`PartyRepository`].
@@ -310,6 +310,7 @@ impl PartyRepository for PostgresPartyRepository {
             name,
             email: new.email,
             phone: new.phone,
+            active: true,
         })
     }
 
@@ -331,8 +332,8 @@ impl PartyRepository for PostgresPartyRepository {
             });
         }
 
-        let contacts = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>)>(
-            "SELECT id::text, party_id::text, name, email::text, phone FROM party.contacts
+        let contacts = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>, bool)>(
+            "SELECT id::text, party_id::text, name, email::text, phone, active FROM party.contacts
              WHERE party_id = $1::uuid AND active = TRUE ORDER BY name, id",
         )
         .bind(party_id)
@@ -348,8 +349,61 @@ impl PartyRepository for PostgresPartyRepository {
                 name: row.2,
                 email: row.3,
                 phone: row.4,
+                active: row.5,
             })
             .collect())
+    }
+
+    async fn update_contact(&self, id: &str, update: ContactUpdate) -> Result<Contact, PartyError> {
+        Self::parse_uuid(id)?;
+        let current = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>, bool)>(
+            "SELECT id::text, party_id::text, name, email::text, phone, active FROM party.contacts
+             WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| PartyError::Invalid(format!("get contact: {e}")))?
+        .ok_or_else(|| PartyError::NotFound {
+            entity: "contact",
+            id: id.to_string(),
+        })?;
+
+        let name = match update.name {
+            Some(n) => {
+                let n = n.trim().to_string();
+                if n.is_empty() {
+                    return Err(PartyError::Invalid("contact name must not be empty".into()));
+                }
+                n
+            }
+            None => current.2,
+        };
+        let email = update.email.unwrap_or(current.3);
+        let phone = update.phone.unwrap_or(current.4);
+        let active = update.active.unwrap_or(current.5);
+
+        sqlx::query(
+            "UPDATE party.contacts SET name = $1, email = $2, phone = $3, active = $4,
+             row_version = row_version + 1 WHERE id = $5::uuid",
+        )
+        .bind(&name)
+        .bind(&email)
+        .bind(&phone)
+        .bind(active)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| PartyError::Invalid(format!("update contact: {e}")))?;
+
+        Ok(Contact {
+            id: current.0,
+            party_id: current.1,
+            name,
+            email,
+            phone,
+            active,
+        })
     }
 
     async fn add_address(&self, party_id: &str, new: NewAddress) -> Result<Address, PartyError> {
@@ -415,6 +469,7 @@ impl PartyRepository for PostgresPartyRepository {
             state_region: new.state_region,
             postal_code: new.postal_code,
             country,
+            active: true,
         })
     }
 
@@ -436,8 +491,8 @@ impl PartyRepository for PostgresPartyRepository {
             });
         }
 
-        let rows = sqlx::query_as::<_, (String, String, String, String, Option<String>, String, Option<String>, Option<String>, String)>(
-            "SELECT id::text, party_id::text, kind::text, line1, line2, city, state_region, postal_code, country
+        let rows = sqlx::query_as::<_, (String, String, String, String, Option<String>, String, Option<String>, Option<String>, String, bool)>(
+            "SELECT id::text, party_id::text, kind::text, line1, line2, city, state_region, postal_code, country, active
              FROM party.addresses
              WHERE party_id = $1::uuid AND active = TRUE
              ORDER BY city, id",
@@ -459,7 +514,95 @@ impl PartyRepository for PostgresPartyRepository {
                 state_region: row.6,
                 postal_code: row.7,
                 country: row.8,
+                active: row.9,
             })
             .collect())
+    }
+
+    async fn update_address(&self, id: &str, update: AddressUpdate) -> Result<Address, PartyError> {
+        Self::parse_uuid(id)?;
+        let current = sqlx::query_as::<_, (String, String, String, String, Option<String>, String, Option<String>, Option<String>, String, bool)>(
+            "SELECT id::text, party_id::text, kind::text, line1, line2, city, state_region, postal_code, country, active
+             FROM party.addresses WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| PartyError::Invalid(format!("get address: {e}")))?
+        .ok_or_else(|| PartyError::NotFound {
+            entity: "address",
+            id: id.to_string(),
+        })?;
+
+        let kind = update.kind.unwrap_or_else(|| Self::kind_from_db(&current.2));
+        let line1 = match update.line1 {
+            Some(l) => {
+                let l = l.trim().to_string();
+                if l.is_empty() {
+                    return Err(PartyError::Invalid(
+                        "address line1 must not be empty".into(),
+                    ));
+                }
+                l
+            }
+            None => current.3,
+        };
+        let line2 = update.line2.unwrap_or(current.4);
+        let city = match update.city {
+            Some(c) => {
+                let c = c.trim().to_string();
+                if c.is_empty() {
+                    return Err(PartyError::Invalid("address city must not be empty".into()));
+                }
+                c
+            }
+            None => current.5,
+        };
+        let state_region = update.state_region.unwrap_or(current.6);
+        let postal_code = update.postal_code.unwrap_or(current.7);
+        let country = match update.country {
+            Some(c) => {
+                let c = c.trim().to_uppercase();
+                if c.len() != 2 {
+                    return Err(PartyError::Invalid(
+                        "country must be ISO 3166-1 alpha-2".into(),
+                    ));
+                }
+                c
+            }
+            None => current.8,
+        };
+        let active = update.active.unwrap_or(current.9);
+
+        sqlx::query(
+            "UPDATE party.addresses SET kind = $1::party.address_kind, line1 = $2, line2 = $3,
+             city = $4, state_region = $5, postal_code = $6, country = $7, active = $8,
+             row_version = row_version + 1 WHERE id = $9::uuid",
+        )
+        .bind(Self::kind_to_db(&kind))
+        .bind(&line1)
+        .bind(&line2)
+        .bind(&city)
+        .bind(&state_region)
+        .bind(&postal_code)
+        .bind(&country)
+        .bind(active)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| PartyError::Invalid(format!("update address: {e}")))?;
+
+        Ok(Address {
+            id: current.0,
+            party_id: current.1,
+            kind,
+            line1,
+            line2,
+            city,
+            state_region,
+            postal_code,
+            country,
+            active,
+        })
     }
 }

@@ -53,6 +53,13 @@ pub trait InventoryRepository: Send + Sync {
     async fn is_enabled(&self) -> Result<bool, InventoryError>;
     async fn create_warehouse(&self, code: String, name: String) -> Result<Warehouse, InventoryError>;
     async fn list_warehouses(&self) -> Result<Vec<Warehouse>, InventoryError>;
+    async fn update_warehouse(
+        &self,
+        id: &str,
+        code: Option<String>,
+        name: Option<String>,
+        active: Option<bool>,
+    ) -> Result<Warehouse, InventoryError>;
     async fn list_stock_levels(
         &self,
         warehouse_id: Option<String>,
@@ -143,6 +150,65 @@ impl InventoryRepository for PostgresInventoryRepository {
                 active: r.3,
             })
             .collect())
+    }
+
+    async fn update_warehouse(
+        &self,
+        id: &str,
+        code: Option<String>,
+        name: Option<String>,
+        active: Option<bool>,
+    ) -> Result<Warehouse, InventoryError> {
+        self.require_enabled().await?;
+        let current = sqlx::query_as::<_, (String, String, String, bool)>(
+            "SELECT id::text, code, name, active FROM inventory.warehouses WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| InventoryError::Invalid(e.to_string()))?
+        .ok_or_else(|| InventoryError::NotFound(format!("warehouse {id}")))?;
+
+        let code = match code {
+            Some(c) => {
+                let c = c.trim().to_string();
+                if c.is_empty() {
+                    return Err(InventoryError::Invalid("code required".into()));
+                }
+                c
+            }
+            None => current.1,
+        };
+        let name = match name {
+            Some(n) => {
+                let n = n.trim().to_string();
+                if n.is_empty() {
+                    return Err(InventoryError::Invalid("name required".into()));
+                }
+                n
+            }
+            None => current.2,
+        };
+        let active = active.unwrap_or(current.3);
+
+        sqlx::query(
+            "UPDATE inventory.warehouses SET code = $1, name = $2, active = $3,
+             row_version = row_version + 1 WHERE id = $4::uuid",
+        )
+        .bind(&code)
+        .bind(&name)
+        .bind(active)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| InventoryError::Invalid(e.to_string()))?;
+
+        Ok(Warehouse {
+            id: current.0,
+            code,
+            name,
+            active,
+        })
     }
 
     async fn list_stock_levels(

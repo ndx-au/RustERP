@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use rusterp_auth::{AuthError, AuthRepository, ModuleInfo, ModuleStore};
 use rusterp_catalog::{
-    CatalogError, CatalogRepository, Category as DomCategory, NewCategory, NewProduct,
-    Product as DomProduct, ProductType as DomProductType,
+    CatalogError, CatalogRepository, Category as DomCategory, CategoryUpdate, NewCategory,
+    NewProduct, Product as DomProduct, ProductType as DomProductType, ProductUpdate,
 };
 use rusterp_inventory::{InventoryError, InventoryRepository};
 use rusterp_payments::{PaymentDirection as DomDir, PaymentError, PaymentsRepository};
@@ -17,19 +17,20 @@ use rusterp_proto::catalog::v1::catalog_service_server::CatalogService;
 use rusterp_proto::catalog::v1::{
     Category, CreateCategoryRequest, CreateProductRequest, ListCategoriesRequest,
     ListCategoriesResponse, ListProductsRequest, ListProductsResponse, Product, ProductType,
+    UpdateCategoryRequest, UpdateProductRequest,
 };
 use rusterp_proto::inventory::v1::inventory_service_server::InventoryService;
 use rusterp_proto::inventory::v1::{
     CreateStockMoveRequest, CreateWarehouseRequest, ListStockLevelsRequest,
     ListStockLevelsResponse, ListStockMovesRequest, ListStockMovesResponse, ListWarehousesRequest,
-    ListWarehousesResponse, StockLevel, StockMove, Warehouse,
+    ListWarehousesResponse, StockLevel, StockMove, UpdateWarehouseRequest, Warehouse,
 };
 use rusterp_proto::payment::v1::payment_service_server::PaymentService;
 use rusterp_proto::payment::v1::{
     BankAccount, CreateAllocationRequest, CreateBankAccountRequest, CreatePaymentRequest,
     ListAllocationsRequest, ListAllocationsResponse, ListBankAccountsRequest,
     ListBankAccountsResponse, ListPaymentsRequest, ListPaymentsResponse, Payment,
-    PaymentAllocation, PaymentDirection,
+    PaymentAllocation, PaymentDirection, UpdateBankAccountRequest, UpdatePaymentRequest,
 };
 use rusterp_proto::platform::v1::auth_service_server::AuthService;
 use rusterp_proto::platform::v1::module_service_server::ModuleService;
@@ -37,13 +38,13 @@ use rusterp_proto::platform::v1::{
     CreateUserRequest, ListModulesRequest, ListModulesResponse, ListPermissionsRequest,
     ListPermissionsResponse, ListRolesRequest, ListRolesResponse, ListUsersRequest,
     ListUsersResponse, ModuleInfo as ProtoModule, PermissionInfo, RoleInfo, SetModuleEnabledRequest,
-    UserInfo,
+    UpdateUserRequest, UserInfo,
 };
 use rusterp_proto::sales::v1::sales_service_server::SalesService;
 use rusterp_proto::sales::v1::{
     CreateSalesDocumentRequest, DocumentKind, DocumentStatus, GetSalesDocumentRequest,
     GetSalesDocumentResponse, ListSalesDocumentsRequest, ListSalesDocumentsResponse,
-    SalesDocument, SalesDocumentLine, SetSalesDocumentStatusRequest,
+    SalesDocument, SalesDocumentLine, SetSalesDocumentStatusRequest, UpdateSalesDocumentRequest,
 };
 use tonic::{Request, Response, Status};
 
@@ -124,6 +125,35 @@ impl CatalogService for CatalogSvc {
         Ok(Response::new(ListProductsResponse { products }))
     }
 
+    async fn update_product(
+        &self,
+        request: Request<UpdateProductRequest>,
+    ) -> Result<Response<Product>, Status> {
+        let req = request.into_inner();
+        let product_type = req.r#type.map(|t| {
+            match ProductType::try_from(t).unwrap_or(ProductType::Stock) {
+                ProductType::Service => DomProductType::Service,
+                ProductType::Consumable => DomProductType::Consumable,
+                _ => DomProductType::Stock,
+            }
+        });
+        let p = self
+            .repo
+            .update_product(
+                &req.id,
+                ProductUpdate {
+                    sku: req.sku,
+                    name: req.name,
+                    product_type,
+                    category_id: req.category_id.map(Some),
+                    active: req.active,
+                },
+            )
+            .await
+            .map_err(catalog_err)?;
+        Ok(Response::new(product_to_proto(p)))
+    }
+
     async fn create_category(
         &self,
         request: Request<CreateCategoryRequest>,
@@ -153,6 +183,26 @@ impl CatalogService for CatalogSvc {
             .map(category_to_proto)
             .collect();
         Ok(Response::new(ListCategoriesResponse { categories }))
+    }
+
+    async fn update_category(
+        &self,
+        request: Request<UpdateCategoryRequest>,
+    ) -> Result<Response<Category>, Status> {
+        let req = request.into_inner();
+        let c = self
+            .repo
+            .update_category(
+                &req.id,
+                CategoryUpdate {
+                    name: req.name,
+                    parent_id: req.parent_id.map(Some),
+                    active: req.active,
+                },
+            )
+            .await
+            .map_err(catalog_err)?;
+        Ok(Response::new(category_to_proto(c)))
     }
 }
 
@@ -280,6 +330,19 @@ impl SalesService for SalesSvc {
             .map_err(sales_err)?;
         Ok(Response::new(sales_doc_to_proto(doc)))
     }
+
+    async fn update_sales_document(
+        &self,
+        request: Request<UpdateSalesDocumentRequest>,
+    ) -> Result<Response<SalesDocument>, Status> {
+        let req = request.into_inner();
+        let doc = self
+            .repo
+            .update_document(&req.id, req.notes)
+            .await
+            .map_err(sales_err)?;
+        Ok(Response::new(sales_doc_to_proto(doc)))
+    }
 }
 
 fn sales_doc_to_proto(d: rusterp_sales::SalesDocument) -> SalesDocument {
@@ -350,6 +413,24 @@ impl PaymentService for PaymentSvc {
         Ok(Response::new(ListBankAccountsResponse { accounts }))
     }
 
+    async fn update_bank_account(
+        &self,
+        request: Request<UpdateBankAccountRequest>,
+    ) -> Result<Response<BankAccount>, Status> {
+        let req = request.into_inner();
+        let a = self
+            .repo
+            .update_bank_account(&req.id, req.name, req.currency, req.active)
+            .await
+            .map_err(pay_err)?;
+        Ok(Response::new(BankAccount {
+            id: a.id,
+            name: a.name,
+            currency: a.currency,
+            active: a.active,
+        }))
+    }
+
     async fn create_payment(
         &self,
         request: Request<CreatePaymentRequest>,
@@ -413,6 +494,31 @@ impl PaymentService for PaymentSvc {
             })
             .collect();
         Ok(Response::new(ListPaymentsResponse { payments }))
+    }
+
+    async fn update_payment(
+        &self,
+        request: Request<UpdatePaymentRequest>,
+    ) -> Result<Response<Payment>, Status> {
+        let req = request.into_inner();
+        let p = self
+            .repo
+            .update_payment(&req.id, req.reference, req.bank_account_id.map(Some))
+            .await
+            .map_err(pay_err)?;
+        Ok(Response::new(Payment {
+            id: p.id,
+            direction: match p.direction {
+                DomDir::Inbound => PaymentDirection::Inbound as i32,
+                DomDir::Outbound => PaymentDirection::Outbound as i32,
+            },
+            party_id: p.party_id,
+            bank_account_id: p.bank_account_id,
+            amount_minor: p.amount_minor,
+            currency: p.currency,
+            reference: p.reference,
+            status: p.status,
+        }))
     }
 
     async fn create_allocation(
@@ -497,6 +603,24 @@ impl InventoryService for InventorySvc {
             })
             .collect();
         Ok(Response::new(ListWarehousesResponse { warehouses }))
+    }
+
+    async fn update_warehouse(
+        &self,
+        request: Request<UpdateWarehouseRequest>,
+    ) -> Result<Response<Warehouse>, Status> {
+        let req = request.into_inner();
+        let w = self
+            .repo
+            .update_warehouse(&req.id, req.code, req.name, req.active)
+            .await
+            .map_err(inv_err)?;
+        Ok(Response::new(Warehouse {
+            id: w.id,
+            code: w.code,
+            name: w.name,
+            active: w.active,
+        }))
     }
 
     async fn list_stock_levels(
@@ -686,6 +810,24 @@ impl AuthService for AuthSvc {
         let u = self
             .repo
             .create_user(req.login, req.display_name, req.password)
+            .await
+            .map_err(auth_err)?;
+        Ok(Response::new(UserInfo {
+            id: u.id,
+            login: u.login,
+            display_name: u.display_name,
+            active: u.active,
+        }))
+    }
+
+    async fn update_user(
+        &self,
+        request: Request<UpdateUserRequest>,
+    ) -> Result<Response<UserInfo>, Status> {
+        let req = request.into_inner();
+        let u = self
+            .repo
+            .update_user(&req.id, req.display_name, req.active, req.password)
             .await
             .map_err(auth_err)?;
         Ok(Response::new(UserInfo {

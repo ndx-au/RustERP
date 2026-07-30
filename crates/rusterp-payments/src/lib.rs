@@ -61,6 +61,13 @@ pub trait PaymentsRepository: Send + Sync {
         currency: String,
     ) -> Result<BankAccount, PaymentError>;
     async fn list_bank_accounts(&self) -> Result<Vec<BankAccount>, PaymentError>;
+    async fn update_bank_account(
+        &self,
+        id: &str,
+        name: Option<String>,
+        currency: Option<String>,
+        active: Option<bool>,
+    ) -> Result<BankAccount, PaymentError>;
     async fn create_payment(
         &self,
         direction: PaymentDirection,
@@ -71,6 +78,12 @@ pub trait PaymentsRepository: Send + Sync {
         reference: String,
     ) -> Result<Payment, PaymentError>;
     async fn list_payments(&self) -> Result<Vec<Payment>, PaymentError>;
+    async fn update_payment(
+        &self,
+        id: &str,
+        reference: Option<String>,
+        bank_account_id: Option<Option<String>>,
+    ) -> Result<Payment, PaymentError>;
     async fn create_allocation(
         &self,
         payment_id: String,
@@ -143,6 +156,64 @@ impl PaymentsRepository for PostgresPaymentsRepository {
                 active: r.3,
             })
             .collect())
+    }
+
+    async fn update_bank_account(
+        &self,
+        id: &str,
+        name: Option<String>,
+        currency: Option<String>,
+        active: Option<bool>,
+    ) -> Result<BankAccount, PaymentError> {
+        let current = sqlx::query_as::<_, (String, String, String, bool)>(
+            "SELECT id::text, name, currency, active FROM payment.bank_accounts WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| PaymentError::Invalid(e.to_string()))?
+        .ok_or_else(|| PaymentError::NotFound(format!("bank account {id}")))?;
+
+        let name = match name {
+            Some(n) => {
+                let n = n.trim().to_string();
+                if n.is_empty() {
+                    return Err(PaymentError::Invalid("name required".into()));
+                }
+                n
+            }
+            None => current.1,
+        };
+        let currency = match currency {
+            Some(c) => {
+                let c = c.trim().to_uppercase();
+                if c.len() != 3 {
+                    return Err(PaymentError::Invalid("currency must be 3 letters".into()));
+                }
+                c
+            }
+            None => current.2,
+        };
+        let active = active.unwrap_or(current.3);
+
+        sqlx::query(
+            "UPDATE payment.bank_accounts SET name = $1, currency = $2, active = $3,
+             row_version = row_version + 1 WHERE id = $4::uuid",
+        )
+        .bind(&name)
+        .bind(&currency)
+        .bind(active)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| PaymentError::Invalid(e.to_string()))?;
+
+        Ok(BankAccount {
+            id: current.0,
+            name,
+            currency,
+            active,
+        })
     }
 
     async fn create_payment(
@@ -219,6 +290,52 @@ impl PaymentsRepository for PostgresPaymentsRepository {
                 status: r.7,
             })
             .collect())
+    }
+
+    async fn update_payment(
+        &self,
+        id: &str,
+        reference: Option<String>,
+        bank_account_id: Option<Option<String>>,
+    ) -> Result<Payment, PaymentError> {
+        let rows = sqlx::query_as::<_, (String, String, String, Option<String>, i64, String, Option<String>, String)>(
+            "SELECT id::text, direction::text, party_id::text, bank_account_id::text, amount_minor, currency, reference, status::text
+             FROM payment.payments WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| PaymentError::Invalid(e.to_string()))?
+        .ok_or_else(|| PaymentError::NotFound(format!("payment {id}")))?;
+
+        let reference = reference.unwrap_or_else(|| rows.6.clone().unwrap_or_default());
+        let bank_account_id = bank_account_id.unwrap_or_else(|| rows.3.clone());
+
+        sqlx::query(
+            "UPDATE payment.payments SET reference = $1, bank_account_id = $2::uuid,
+             row_version = row_version + 1 WHERE id = $3::uuid",
+        )
+        .bind(&reference)
+        .bind(&bank_account_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| PaymentError::Invalid(e.to_string()))?;
+
+        Ok(Payment {
+            id: rows.0,
+            direction: if rows.1 == "outbound" {
+                PaymentDirection::Outbound
+            } else {
+                PaymentDirection::Inbound
+            },
+            party_id: rows.2,
+            bank_account_id,
+            amount_minor: rows.4,
+            currency: rows.5,
+            reference,
+            status: rows.7,
+        })
     }
 
     async fn create_allocation(

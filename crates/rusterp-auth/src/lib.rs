@@ -75,6 +75,13 @@ pub trait AuthRepository: Send + Sync {
         display_name: String,
         password: String,
     ) -> Result<UserInfo, AuthError>;
+    async fn update_user(
+        &self,
+        id: &str,
+        display_name: Option<String>,
+        active: Option<bool>,
+        password: Option<String>,
+    ) -> Result<UserInfo, AuthError>;
     async fn user_login_active(&self, login: &str) -> Result<bool, AuthError>;
 }
 
@@ -179,6 +186,71 @@ impl AuthRepository for PostgresAuthRepository {
             login,
             display_name,
             active: true,
+        })
+    }
+
+    async fn update_user(
+        &self,
+        id: &str,
+        display_name: Option<String>,
+        active: Option<bool>,
+        password: Option<String>,
+    ) -> Result<UserInfo, AuthError> {
+        let current = sqlx::query_as::<_, (String, String, String, bool)>(
+            "SELECT id::text, login::text, display_name, active FROM auth.users WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| AuthError::Invalid(e.to_string()))?
+        .ok_or_else(|| AuthError::NotFound(format!("user {id}")))?;
+
+        let display_name = match display_name {
+            Some(d) => {
+                let d = d.trim().to_string();
+                if d.is_empty() {
+                    return Err(AuthError::Invalid("display_name required".into()));
+                }
+                d
+            }
+            None => current.2,
+        };
+        let active = active.unwrap_or(current.3);
+
+        if let Some(password) = password {
+            if password.is_empty() {
+                return Err(AuthError::Invalid("password must not be empty".into()));
+            }
+            let hash = interim_password_hash(&password);
+            sqlx::query(
+                "UPDATE auth.users SET display_name = $1, active = $2, password_hash = $3,
+                 row_version = row_version + 1 WHERE id = $4::uuid",
+            )
+            .bind(&display_name)
+            .bind(active)
+            .bind(&hash)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AuthError::Invalid(e.to_string()))?;
+        } else {
+            sqlx::query(
+                "UPDATE auth.users SET display_name = $1, active = $2,
+                 row_version = row_version + 1 WHERE id = $3::uuid",
+            )
+            .bind(&display_name)
+            .bind(active)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AuthError::Invalid(e.to_string()))?;
+        }
+
+        Ok(UserInfo {
+            id: current.0,
+            login: current.1,
+            display_name,
+            active,
         })
     }
 

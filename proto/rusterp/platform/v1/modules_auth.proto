@@ -54,6 +54,13 @@ message CreateUserRequest {
   string password = 3;
 }
 
+message UpdateUserRequest {
+  string id = 1;
+  optional string display_name = 2;
+  optional bool active = 3;
+  optional string password = 4;
+}
+
 service ModuleService {
   rpc ListModules(ListModulesRequest) returns (ListModulesResponse);
   rpc SetModuleEnabled(SetModuleEnabledRequest) returns (ModuleInfo);
@@ -64,4 +71,5 @@ service AuthService {
   rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
   rpc ListPermissions(ListPermissionsRequest) returns (ListPermissionsResponse);
   rpc CreateUser(CreateUserRequest) returns (UserInfo);
+  rpc UpdateUser(UpdateUserRequest) returns (UserInfo);
 }
