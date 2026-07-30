@@ -1,0 +1,55 @@
+// Copyright 2026 NDX Pty Ltd and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package rusterp.catalog.v1;
+
+enum ProductType {
+  PRODUCT_TYPE_UNSPECIFIED = 0;
+  PRODUCT_TYPE_STOCK = 1;
+  PRODUCT_TYPE_SERVICE = 2;
+  PRODUCT_TYPE_CONSUMABLE = 3;
+}
+
+message Product {
+  string id = 1;
+  string sku = 2;
+  string name = 3;
+  ProductType type = 4;
+  optional string category_id = 5;
+  string uom_id = 6;
+  bool active = 7;
+}
+
+message Category {
+  string id = 1;
+  string name = 2;
+  optional string parent_id = 3;
+  bool active = 4;
+}
+
+message CreateProductRequest {
+  string sku = 1;
+  string name = 2;
+  ProductType type = 3;
+  optional string category_id = 4;
+}
+
+message ListProductsRequest {}
+message ListProductsResponse { repeated Product products = 1; }
+
+message CreateCategoryRequest {
+  string name = 1;
+  optional string parent_id = 2;
+}
+
+message ListCategoriesRequest {}
+message ListCategoriesResponse { repeated Category categories = 1; }
+
+service CatalogService {
+  rpc CreateProduct(CreateProductRequest) returns (Product);
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+  rpc CreateCategory(CreateCategoryRequest) returns (Category);
+  rpc ListCategories(ListCategoriesRequest) returns (ListCategoriesResponse);
+}

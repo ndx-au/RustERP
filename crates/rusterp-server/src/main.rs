@@ -1,7 +1,7 @@
 //! RustERP gRPC server binary.
 //!
-//! Serves `rusterp.party.v1.PartyService` and `rusterp.platform.v1.HealthService`
-//! with a **PostgreSQL-backed** party store. **Auth is not enforced.**
+//! Serves Party, Catalog, Sales, Payment, Inventory, Module, Auth, and Health
+//! services with **PostgreSQL-backed** stores. Soft RBAC via `RUSTERP_AUTH_ENFORCE`.
 //!
 //! **Dual transport:**
 //! - TCP gRPC on `RUSTERP_LISTEN` (default `127.0.0.1:50051`) — grpcurl / API tools.
@@ -17,9 +17,14 @@ mod port_guard;
 use std::process;
 use std::sync::Arc;
 
+use rusterp_auth::PostgresAuthRepository;
+use rusterp_catalog::PostgresCatalogRepository;
+use rusterp_inventory::PostgresInventoryRepository;
 use rusterp_parties::PostgresPartyRepository;
+use rusterp_payments::PostgresPaymentsRepository;
+use rusterp_sales::PostgresSalesRepository;
 use rusterp_server::{
-    build_grpc_routes, build_router, parse_listen_from_args, SharedRepo, LISTEN_ENV,
+    build_grpc_routes, build_router, parse_listen_from_args, AppState, LISTEN_ENV,
 };
 use rusterp_storage::bootstrap;
 use tokio_util::sync::CancellationToken;
@@ -112,10 +117,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     tracing::info!("storage backend: postgresql (sqlx pool)");
 
-    let repo: SharedRepo = Arc::new(PostgresPartyRepository::new(pool));
+    let auth = Arc::new(PostgresAuthRepository::new(pool.clone()));
+    let state = AppState {
+        storage: storage.clone(),
+        parties: Arc::new(PostgresPartyRepository::new(pool.clone())),
+        catalog: Arc::new(PostgresCatalogRepository::new(pool.clone())),
+        sales: Arc::new(PostgresSalesRepository::new(pool.clone())),
+        payments: Arc::new(PostgresPaymentsRepository::new(pool.clone())),
+        inventory: Arc::new(PostgresInventoryRepository::new(pool.clone())),
+        auth: auth.clone(),
+        modules: auth,
+    };
 
-    let tcp_router = build_router(storage.clone(), repo.clone())?;
-    let grpc_routes = build_grpc_routes(storage, repo)?;
+    let tcp_router = build_router(state.clone())?;
+    let grpc_routes = build_grpc_routes(state)?;
 
     let cancel = CancellationToken::new();
 

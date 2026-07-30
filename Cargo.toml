@@ -4,12 +4,14 @@ members = [
     "crates/rusterp-storage",
     "crates/rusterp-modules",
     "crates/rusterp-parties",
+    "crates/rusterp-catalog",
+    "crates/rusterp-sales",
+    "crates/rusterp-payments",
+    "crates/rusterp-inventory",
+    "crates/rusterp-auth",
     "crates/rusterp-proto",
     "crates/rusterp-server",
 ]
-# Future domain crates (not members until implemented), e.g.:
-# crates/rusterp-catalog, crates/rusterp-sales,
-# crates/rusterp-payments, crates/rusterp-inventory
 
 [workspace.package]
 version = "0.1.0"

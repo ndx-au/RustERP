@@ -113,6 +113,40 @@ pub struct NewContact {
     pub phone: Option<String>,
 }
 
+/// Address kind for a party address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AddressKind {
+    Billing,
+    Shipping,
+    Other,
+}
+
+/// Postal address belonging to a party.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Address {
+    pub id: String,
+    pub party_id: String,
+    pub kind: AddressKind,
+    pub line1: String,
+    pub line2: Option<String>,
+    pub city: String,
+    pub state_region: Option<String>,
+    pub postal_code: Option<String>,
+    pub country: String,
+}
+
+/// Input for attaching an address to a party.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewAddress {
+    pub kind: AddressKind,
+    pub line1: String,
+    pub line2: Option<String>,
+    pub city: String,
+    pub state_region: Option<String>,
+    pub postal_code: Option<String>,
+    pub country: String,
+}
+
 /// Repository / domain errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PartyError {
@@ -133,16 +167,23 @@ impl fmt::Display for PartyError {
 
 impl std::error::Error for PartyError {}
 
-/// Persistence port for parties and contacts.
+/// Persistence port for parties, contacts, and addresses.
 #[async_trait]
 pub trait PartyRepository: Send + Sync {
     async fn create_party(&self, new: NewParty) -> Result<Party, PartyError>;
     async fn get_party(&self, id: &str) -> Result<Party, PartyError>;
-    async fn list_parties(&self) -> Result<Vec<Party>, PartyError>;
+    /// When `role_filter` is `Some`, only parties holding that role are returned.
+    async fn list_parties(
+        &self,
+        role_filter: Option<PartyRole>,
+    ) -> Result<Vec<Party>, PartyError>;
     async fn update_party(&self, id: &str, update: PartyUpdate) -> Result<Party, PartyError>;
 
     async fn add_contact(&self, party_id: &str, new: NewContact) -> Result<Contact, PartyError>;
     async fn list_contacts(&self, party_id: &str) -> Result<Vec<Contact>, PartyError>;
+
+    async fn add_address(&self, party_id: &str, new: NewAddress) -> Result<Address, PartyError>;
+    async fn list_addresses(&self, party_id: &str) -> Result<Vec<Address>, PartyError>;
 }
 
 /// In-memory [`PartyRepository`] for tests and early development.
@@ -150,6 +191,7 @@ pub trait PartyRepository: Send + Sync {
 pub struct InMemoryPartyRepository {
     parties: Mutex<HashMap<String, Party>>,
     contacts: Mutex<HashMap<String, Contact>>,
+    addresses: Mutex<HashMap<String, Address>>,
 }
 
 impl InMemoryPartyRepository {
@@ -199,12 +241,20 @@ impl PartyRepository for InMemoryPartyRepository {
             })
     }
 
-    async fn list_parties(&self) -> Result<Vec<Party>, PartyError> {
+    async fn list_parties(
+        &self,
+        role_filter: Option<PartyRole>,
+    ) -> Result<Vec<Party>, PartyError> {
         let mut list: Vec<_> = self
             .parties
             .lock()
             .map_err(|e| PartyError::Invalid(format!("lock poisoned: {e}")))?
             .values()
+            .filter(|p| {
+                role_filter
+                    .map(|role| p.roles.contains(&role))
+                    .unwrap_or(true)
+            })
             .cloned()
             .collect();
         list.sort_by(|a, b| a.display_name.cmp(&b.display_name).then(a.id.cmp(&b.id)));
@@ -301,6 +351,73 @@ impl PartyRepository for InMemoryPartyRepository {
         list.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
         Ok(list)
     }
+
+    async fn add_address(&self, party_id: &str, new: NewAddress) -> Result<Address, PartyError> {
+        if !self
+            .parties
+            .lock()
+            .map_err(|e| PartyError::Invalid(format!("lock poisoned: {e}")))?
+            .contains_key(party_id)
+        {
+            return Err(PartyError::NotFound {
+                entity: "party",
+                id: party_id.to_string(),
+            });
+        }
+        let line1 = new.line1.trim().to_string();
+        let city = new.city.trim().to_string();
+        let country = new.country.trim().to_uppercase();
+        if line1.is_empty() || city.is_empty() {
+            return Err(PartyError::Invalid(
+                "address line1 and city must not be empty".into(),
+            ));
+        }
+        if country.len() != 2 {
+            return Err(PartyError::Invalid(
+                "country must be ISO 3166-1 alpha-2".into(),
+            ));
+        }
+        let address = Address {
+            id: new_id(),
+            party_id: party_id.to_string(),
+            kind: new.kind,
+            line1,
+            line2: new.line2,
+            city,
+            state_region: new.state_region,
+            postal_code: new.postal_code,
+            country,
+        };
+        self.addresses
+            .lock()
+            .map_err(|e| PartyError::Invalid(format!("lock poisoned: {e}")))?
+            .insert(address.id.clone(), address.clone());
+        Ok(address)
+    }
+
+    async fn list_addresses(&self, party_id: &str) -> Result<Vec<Address>, PartyError> {
+        if !self
+            .parties
+            .lock()
+            .map_err(|e| PartyError::Invalid(format!("lock poisoned: {e}")))?
+            .contains_key(party_id)
+        {
+            return Err(PartyError::NotFound {
+                entity: "party",
+                id: party_id.to_string(),
+            });
+        }
+        let mut list: Vec<_> = self
+            .addresses
+            .lock()
+            .map_err(|e| PartyError::Invalid(format!("lock poisoned: {e}")))?
+            .values()
+            .filter(|a| a.party_id == party_id)
+            .cloned()
+            .collect();
+        list.sort_by(|a, b| a.city.cmp(&b.city).then(a.id.cmp(&b.id)));
+        Ok(list)
+    }
 }
 
 #[cfg(test)]
@@ -309,6 +426,62 @@ mod tests {
 
     fn roles(items: &[PartyRole]) -> BTreeSet<PartyRole> {
         items.iter().copied().collect()
+    }
+
+    #[tokio::test]
+    async fn list_parties_filters_by_role() {
+        let repo = InMemoryPartyRepository::new();
+        let _ = repo
+            .create_party(NewParty {
+                display_name: "Cust".into(),
+                roles: roles(&[PartyRole::Customer]),
+            })
+            .await
+            .unwrap();
+        let _ = repo
+            .create_party(NewParty {
+                display_name: "Supp".into(),
+                roles: roles(&[PartyRole::Supplier]),
+            })
+            .await
+            .unwrap();
+        let filtered = repo
+            .list_parties(Some(PartyRole::Customer))
+            .await
+            .unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].display_name, "Cust");
+    }
+
+    #[tokio::test]
+    async fn add_and_list_addresses_for_party() {
+        let repo = InMemoryPartyRepository::new();
+        let party = repo
+            .create_party(NewParty {
+                display_name: "With Address".into(),
+                roles: roles(&[PartyRole::Customer]),
+            })
+            .await
+            .unwrap();
+        let addr = repo
+            .add_address(
+                &party.id,
+                NewAddress {
+                    kind: AddressKind::Billing,
+                    line1: "10 Queen St".into(),
+                    line2: None,
+                    city: "Brisbane".into(),
+                    state_region: Some("QLD".into()),
+                    postal_code: Some("4000".into()),
+                    country: "AU".into(),
+                },
+            )
+            .await
+            .unwrap();
+        let list = repo.list_addresses(&party.id).await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, addr.id);
+        assert_eq!(list[0].kind, AddressKind::Billing);
     }
 
     #[tokio::test]

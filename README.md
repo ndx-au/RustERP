@@ -65,21 +65,22 @@ proto/                     gRPC/protobuf conventions and .proto defs
 .local/                    runtime pid/log (gitignored; created by deploy)
 ```
 
-**Parties** is the first landed functional domain crate (`rusterp-parties`):
-customers, suppliers, prospects (multi-role party model) and contacts. Production
-uses [`PostgresPartyRepository`](crates/rusterp-parties/src/postgres.rs); tests also
-have an in-memory repository. Catalog, Sales, Payments, and Inventory crates land
-per the [product roadmap](./docs/ROADMAP.md).
+**Domain crates** under `crates/`: `rusterp-parties`, `rusterp-catalog`,
+`rusterp-sales`, `rusterp-payments`, `rusterp-inventory`, and `rusterp-auth`
+(plus `rusterp-modules` registry). Production repositories are PostgreSQL-backed;
+parties also has an in-memory repository for unit tests. See the
+[product roadmap](./docs/ROADMAP.md).
 
 **Reference UI** lives in a **separate repository**:
 [RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM) (egui/eframe
 WASM + native client). It consumes the core over **slozhn** gRPC-over-WebSocket
 at `/rpc` — never embed UI code in this repo.
 
-**gRPC:** `rusterp-server` exposes `rusterp.party.v1.PartyService` and
-`rusterp.platform.v1.HealthService` backed by PostgreSQL. **Authentication is not
-enforced yet.** Generated types live in `rusterp-proto` (sources under `proto/`).
-Schema reference: [`docs/schema.md`](./docs/schema.md).
+**gRPC:** `rusterp-server` exposes Party, Catalog, Sales, Payment, Inventory,
+Module, Auth, and Health services (shared on TCP and slozhn). Soft RBAC when
+`RUSTERP_AUTH_ENFORCE=1` (metadata `x-rusterp-user`). Generated types live in
+`rusterp-proto` (sources under `proto/`). Schema reference:
+[`docs/schema.md`](./docs/schema.md).
 
 ### Dual transport (Macaron-aligned)
 
@@ -306,7 +307,8 @@ the HTTP/slozhn leg and static WASM, run `rusterp-server` with
 `rusterp-server.toml` (see [Run the server](#run-the-server) above) or set
 `RUSTERP_HTTP_LISTEN`.
 
-**Party data is persisted in PostgreSQL. Authentication is not enforced yet.**
+**Party and MVP domain data is persisted in PostgreSQL. Soft auth via
+`RUSTERP_AUTH_ENFORCE=1` (default off).**
 Point the separate [RustERP-UI-WASM](https://github.com/ndx-au/RustERP-UI-WASM)
 client or `grpcurl` at the listen addresses when ready. Set `RUSTERP_POSTGRES_URL`
 (or `[storage].postgres_url` in config).

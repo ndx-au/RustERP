@@ -10,21 +10,21 @@ scope with the human and verify with real `cargo test` / deploy.
 |-------|--------|
 | Platform | Dual transport, Postgres/sqlx migrations, deploy stack |
 | Schema | Full MVP + post-MVP stubs — see [schema.md](./schema.md) |
-| Domain crates | `rusterp-parties` live; others land per phase below |
-| gRPC | `PartyService` + `HealthService`; auth not enforced yet |
-| UI | Full IA shell; live Parties list + Settings Connection; other pages wireframe until their phase |
+| Domain crates | `rusterp-parties`, `rusterp-catalog`, `rusterp-sales`, `rusterp-payments`, `rusterp-inventory`, `rusterp-auth` |
+| gRPC | Party, Catalog, Sales, Payment, Inventory, Module, Auth, Health — soft RBAC via `RUSTERP_AUTH_ENFORCE` |
+| UI | Live: Parties, Catalog (products/categories), Sales docs, Payments, Inventory (when enabled), Settings Modules & Users |
 
 ## Phases
 
-| Phase | Outcome |
-|-------|---------|
-| **0** | Docs match Postgres-backed Parties |
-| **1** | Parties CRUD + role filters + contacts + addresses in UI |
-| **2** | Catalog products/categories live |
-| **3** | Sales quotes → orders → invoices usable |
-| **4** | Payments + allocations against invoices |
-| **5** | Auth/RBAC + live `core.modules` toggles |
-| **6** | Toggleable inventory |
+| Phase | Outcome | Status |
+|-------|---------|--------|
+| **0** | Docs match Postgres-backed Parties | done |
+| **1** | Parties CRUD + role filters + contacts + addresses in UI | done |
+| **2** | Catalog products/categories live | done |
+| **3** | Sales quotes → orders → invoices usable | done |
+| **4** | Payments + allocations against invoices | done |
+| **5** | Auth/RBAC + live `core.modules` toggles | done |
+| **6** | Toggleable inventory | done |
 
 ## Cross-cutting rules
 

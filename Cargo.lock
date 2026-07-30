@@ -1448,6 +1448,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusterp-auth"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "rusterp-catalog"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "rusterp-inventory"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "rusterp-modules"
 version = "0.1.0"
 
@@ -1457,6 +1488,16 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "rusterp-modules",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "rusterp-payments"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
  "sqlx",
  "tokio",
  "uuid",
@@ -1473,14 +1514,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusterp-sales"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "rusterp-server"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
  "nix",
+ "rusterp-auth",
+ "rusterp-catalog",
+ "rusterp-inventory",
  "rusterp-parties",
+ "rusterp-payments",
  "rusterp-proto",
+ "rusterp-sales",
  "rusterp-storage",
  "serde",
  "slozhn",

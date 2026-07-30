@@ -6,11 +6,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_root = manifest_dir.join("../../proto");
     let proto_root = proto_root.canonicalize()?;
 
-    let party = proto_root.join("rusterp/party/v1/party.proto");
-    let health = proto_root.join("rusterp/platform/v1/health.proto");
+    let protos = [
+        proto_root.join("rusterp/party/v1/party.proto"),
+        proto_root.join("rusterp/platform/v1/health.proto"),
+        proto_root.join("rusterp/platform/v1/modules_auth.proto"),
+        proto_root.join("rusterp/catalog/v1/catalog.proto"),
+        proto_root.join("rusterp/sales/v1/sales.proto"),
+        proto_root.join("rusterp/payment/v1/payment.proto"),
+        proto_root.join("rusterp/inventory/v1/inventory.proto"),
+    ];
 
-    println!("cargo:rerun-if-changed={}", party.display());
-    println!("cargo:rerun-if-changed={}", health.display());
+    for p in &protos {
+        println!("cargo:rerun-if-changed={}", p.display());
+    }
 
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
     let descriptor_path = out_dir.join("rusterp_descriptor.bin");
@@ -19,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .build_client(true)
         .file_descriptor_set_path(&descriptor_path)
-        .compile_protos(&[party, health], &[proto_root])?;
+        .compile_protos(&protos, &[proto_root])?;
 
     Ok(())
 }

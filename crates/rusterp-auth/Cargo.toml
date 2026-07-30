@@ -1,0 +1,18 @@
+[package]
+name = "rusterp-auth"
+description = "Auth RBAC + module store for RustERP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+sha2 = "0.10"
+sqlx = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

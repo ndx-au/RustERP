@@ -1,0 +1,79 @@
+// Copyright 2026 NDX Pty Ltd and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package rusterp.sales.v1;
+
+enum DocumentKind {
+  DOCUMENT_KIND_UNSPECIFIED = 0;
+  DOCUMENT_KIND_QUOTE = 1;
+  DOCUMENT_KIND_ORDER = 2;
+  DOCUMENT_KIND_INVOICE = 3;
+  DOCUMENT_KIND_CREDIT_NOTE = 4;
+}
+
+enum DocumentStatus {
+  DOCUMENT_STATUS_UNSPECIFIED = 0;
+  DOCUMENT_STATUS_DRAFT = 1;
+  DOCUMENT_STATUS_CONFIRMED = 2;
+  DOCUMENT_STATUS_POSTED = 3;
+  DOCUMENT_STATUS_CANCELLED = 4;
+}
+
+message SalesDocument {
+  string id = 1;
+  DocumentKind kind = 2;
+  DocumentStatus status = 3;
+  string number = 4;
+  string party_id = 5;
+  string currency = 6;
+  int64 total_minor = 7;
+  string notes = 8;
+}
+
+message SalesDocumentLine {
+  string id = 1;
+  string document_id = 2;
+  int32 line_no = 3;
+  string description = 4;
+  int64 unit_price_minor = 5;
+  int64 total_minor = 6;
+  optional string product_id = 7;
+}
+
+message CreateSalesDocumentRequest {
+  DocumentKind kind = 1;
+  string party_id = 2;
+  string description = 3;
+  int64 unit_price_minor = 4;
+  optional string product_id = 5;
+  string notes = 6;
+}
+
+message ListSalesDocumentsRequest {
+  DocumentKind kind_filter = 1;
+}
+
+message ListSalesDocumentsResponse {
+  repeated SalesDocument documents = 1;
+}
+
+message GetSalesDocumentRequest { string id = 1; }
+
+message GetSalesDocumentResponse {
+  SalesDocument document = 1;
+  repeated SalesDocumentLine lines = 2;
+}
+
+message SetSalesDocumentStatusRequest {
+  string id = 1;
+  DocumentStatus status = 2;
+}
+
+service SalesService {
+  rpc CreateSalesDocument(CreateSalesDocumentRequest) returns (SalesDocument);
+  rpc ListSalesDocuments(ListSalesDocumentsRequest) returns (ListSalesDocumentsResponse);
+  rpc GetSalesDocument(GetSalesDocumentRequest) returns (GetSalesDocumentResponse);
+  rpc SetSalesDocumentStatus(SetSalesDocumentStatusRequest) returns (SalesDocument);
+}

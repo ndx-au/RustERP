@@ -1,0 +1,67 @@
+// Copyright 2026 NDX Pty Ltd and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package rusterp.platform.v1;
+
+message ModuleInfo {
+  string id = 1;
+  string name = 2;
+  bool enabled = 3;
+  bool always_on = 4;
+}
+
+message ListModulesRequest {}
+message ListModulesResponse { repeated ModuleInfo modules = 1; }
+
+message SetModuleEnabledRequest {
+  string id = 1;
+  bool enabled = 2;
+}
+
+message UserInfo {
+  string id = 1;
+  string login = 2;
+  string display_name = 3;
+  bool active = 4;
+}
+
+message RoleInfo {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+}
+
+message PermissionInfo {
+  string id = 1;
+  string resource = 2;
+  string action = 3;
+}
+
+message ListUsersRequest {}
+message ListUsersResponse { repeated UserInfo users = 1; }
+
+message ListRolesRequest {}
+message ListRolesResponse { repeated RoleInfo roles = 1; }
+
+message ListPermissionsRequest {}
+message ListPermissionsResponse { repeated PermissionInfo permissions = 1; }
+
+message CreateUserRequest {
+  string login = 1;
+  string display_name = 2;
+  string password = 3;
+}
+
+service ModuleService {
+  rpc ListModules(ListModulesRequest) returns (ListModulesResponse);
+  rpc SetModuleEnabled(SetModuleEnabledRequest) returns (ModuleInfo);
+}
+
+service AuthService {
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
+  rpc ListPermissions(ListPermissionsRequest) returns (ListPermissionsResponse);
+  rpc CreateUser(CreateUserRequest) returns (UserInfo);
+}

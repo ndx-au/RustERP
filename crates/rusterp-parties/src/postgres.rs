@@ -7,8 +7,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    new_id, Contact, NewContact, NewParty, Party, PartyError, PartyRepository, PartyRole,
-    PartyUpdate,
+    new_id, Address, AddressKind, Contact, NewAddress, NewContact, NewParty, Party, PartyError,
+    PartyRepository, PartyRole, PartyUpdate,
 };
 
 /// PostgreSQL-backed [`PartyRepository`].
@@ -39,6 +39,22 @@ impl PostgresPartyRepository {
             PartyRole::Customer => "customer",
             PartyRole::Supplier => "supplier",
             PartyRole::Prospect => "prospect",
+        }
+    }
+
+    fn kind_from_db(s: &str) -> AddressKind {
+        match s {
+            "billing" => AddressKind::Billing,
+            "shipping" => AddressKind::Shipping,
+            _ => AddressKind::Other,
+        }
+    }
+
+    fn kind_to_db(kind: &AddressKind) -> &'static str {
+        match kind {
+            AddressKind::Billing => "billing",
+            AddressKind::Shipping => "shipping",
+            AddressKind::Other => "other",
         }
     }
 
@@ -143,13 +159,29 @@ impl PartyRepository for PostgresPartyRepository {
         })
     }
 
-    async fn list_parties(&self) -> Result<Vec<Party>, PartyError> {
-        let rows = sqlx::query_as::<_, (String, String, i64, bool)>(
-            "SELECT id::text, display_name, EXTRACT(EPOCH FROM created_at)::bigint, active
-             FROM party.parties ORDER BY display_name, id",
-        )
-        .fetch_all(&self.pool)
-        .await
+    async fn list_parties(
+        &self,
+        role_filter: Option<PartyRole>,
+    ) -> Result<Vec<Party>, PartyError> {
+        let rows = if let Some(role) = role_filter {
+            sqlx::query_as::<_, (String, String, i64, bool)>(
+                "SELECT p.id::text, p.display_name, EXTRACT(EPOCH FROM p.created_at)::bigint, p.active
+                 FROM party.parties p
+                 INNER JOIN party.party_roles r ON r.party_id = p.id
+                 WHERE r.role = $1::party.party_role
+                 ORDER BY p.display_name, p.id",
+            )
+            .bind(Self::role_to_db(&role))
+            .fetch_all(&self.pool)
+            .await
+        } else {
+            sqlx::query_as::<_, (String, String, i64, bool)>(
+                "SELECT id::text, display_name, EXTRACT(EPOCH FROM created_at)::bigint, active
+                 FROM party.parties ORDER BY display_name, id",
+            )
+            .fetch_all(&self.pool)
+            .await
+        }
         .map_err(|e| PartyError::Invalid(format!("list parties: {e}")))?;
 
         let mut parties = Vec::with_capacity(rows.len());
@@ -316,6 +348,117 @@ impl PartyRepository for PostgresPartyRepository {
                 name: row.2,
                 email: row.3,
                 phone: row.4,
+            })
+            .collect())
+    }
+
+    async fn add_address(&self, party_id: &str, new: NewAddress) -> Result<Address, PartyError> {
+        Self::parse_uuid(party_id)?;
+
+        let exists = sqlx::query_scalar::<_, String>(
+            "SELECT id::text FROM party.parties WHERE id = $1::uuid",
+        )
+        .bind(party_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| PartyError::Invalid(format!("check party exists: {e}")))?;
+
+        if exists.is_none() {
+            return Err(PartyError::NotFound {
+                entity: "party",
+                id: party_id.to_string(),
+            });
+        }
+
+        let line1 = new.line1.trim().to_string();
+        let city = new.city.trim().to_string();
+        let country = new.country.trim().to_uppercase();
+        if line1.is_empty() || city.is_empty() {
+            return Err(PartyError::Invalid(
+                "address line1 and city must not be empty".into(),
+            ));
+        }
+        if country.len() != 2 {
+            return Err(PartyError::Invalid(
+                "country must be ISO 3166-1 alpha-2".into(),
+            ));
+        }
+
+        let address_id = new_id();
+        Self::parse_uuid(&address_id)?;
+
+        sqlx::query(
+            "INSERT INTO party.addresses
+             (id, party_id, kind, line1, line2, city, state_region, postal_code, country)
+             VALUES ($1::uuid, $2::uuid, $3::party.address_kind, $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(&address_id)
+        .bind(party_id)
+        .bind(Self::kind_to_db(&new.kind))
+        .bind(&line1)
+        .bind(&new.line2)
+        .bind(&city)
+        .bind(&new.state_region)
+        .bind(&new.postal_code)
+        .bind(&country)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| PartyError::Invalid(format!("insert address: {e}")))?;
+
+        Ok(Address {
+            id: address_id,
+            party_id: party_id.to_string(),
+            kind: new.kind,
+            line1,
+            line2: new.line2,
+            city,
+            state_region: new.state_region,
+            postal_code: new.postal_code,
+            country,
+        })
+    }
+
+    async fn list_addresses(&self, party_id: &str) -> Result<Vec<Address>, PartyError> {
+        Self::parse_uuid(party_id)?;
+
+        let exists = sqlx::query_scalar::<_, String>(
+            "SELECT id::text FROM party.parties WHERE id = $1::uuid",
+        )
+        .bind(party_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| PartyError::Invalid(format!("check party exists: {e}")))?;
+
+        if exists.is_none() {
+            return Err(PartyError::NotFound {
+                entity: "party",
+                id: party_id.to_string(),
+            });
+        }
+
+        let rows = sqlx::query_as::<_, (String, String, String, String, Option<String>, String, Option<String>, Option<String>, String)>(
+            "SELECT id::text, party_id::text, kind::text, line1, line2, city, state_region, postal_code, country
+             FROM party.addresses
+             WHERE party_id = $1::uuid AND active = TRUE
+             ORDER BY city, id",
+        )
+        .bind(party_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| PartyError::Invalid(format!("list addresses: {e}")))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| Address {
+                id: row.0,
+                party_id: row.1,
+                kind: Self::kind_from_db(&row.2),
+                line1: row.3,
+                line2: row.4,
+                city: row.5,
+                state_region: row.6,
+                postal_code: row.7,
+                country: row.8,
             })
             .collect())
     }

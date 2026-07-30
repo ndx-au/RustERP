@@ -74,15 +74,22 @@ dist/
 crates/
   rusterp-storage/         PostgreSQL storage (sqlx pool + migrations)
   rusterp-modules/         functional module registry / activation
-  rusterp-parties/         Parties domain (customers/suppliers/prospects/contacts)
+  rusterp-parties/         Parties domain
+  rusterp-catalog/         Catalog products + categories
+  rusterp-sales/           Sales documents (quote/order/invoice/credit note)
+  rusterp-payments/        Bank accounts, payments, allocations
+  rusterp-inventory/       Warehouses / stock (gated by core.modules)
+  rusterp-auth/            Users/roles/permissions + ModuleStore
   rusterp-proto/           tonic/prost codegen from proto/
   rusterp-server/          dual-transport binary (TCP gRPC + HTTP/slozhn + static WASM)
     src/config.rs          TOML config loader
     src/http.rs            axum + slozhn WebSocket /rpc + ServeDir static
     src/port_guard.rs      listen-port clobber/fail policy
+    src/domain_svc.rs      Catalog/Sales/Payment/Inventory/Module/Auth gRPC adapters
 proto/                     protobuf conventions and .proto sources
 docs/
   schema.md                PostgreSQL domain schema reference + ERD
+  ROADMAP.md               Product phase status
 .local/                    runtime pid/log (gitignored; created at deploy/run)
 .out/                      agent turn dumps (gitignored)
 ```
@@ -112,6 +119,35 @@ HTTP :8123   → GET /     ServeDir from static_dir (default dist/ui/)
 - **Reverse proxy pattern:** TLS at edge; UI host → `:8123`, API host → `:50051` h2c.
 - **UI repo:** WASM uses glow renderer + slozhn client; graphics failures show a
   user-facing troubleshooting overlay (canvas permission / WebGL), not a bare panic.
+
+## Bilbo preview (dogfood)
+
+| Host | Upstream | Purpose |
+|------|----------|---------|
+| `rusterp-ui.dwp.solutions` | `:8123` | egui WASM static + slozhn WS `/rpc` |
+| `rusterp-api.dwp.solutions` | `:50051` | plaintext gRPC / h2c |
+
+Live checkouts only: `~/code/RustERP` + sibling `~/code/RustERP-UI-WASM`. Directories named with a leading `_` (e.g. `_RustERP`) are **backups — do not edit or run as live**.
+
+**Preferred deploy:**
+
+```bash
+./dist/deploy-ui-stack.sh --bg
+```
+
+Requires `cargo`, `trunk`, `protoc`. Creates/uses local `rusterp-server.toml` (must listen `0.0.0.0`; example defaults to `127.0.0.1` and breaks Caddy). Logs/pid: `.local/`.
+
+### Footguns
+
+1. **`dist/ui/` in git is a smoke snapshot** — after UI work, always redeploy. Editing Rust alone does not refresh what Caddy serves.
+2. **`CARGO_MANIFEST_DIR` bake-in** — binary resolves static via compile-time path; a build under path A keeps serving A’s `dist/ui` even if cwd later points elsewhere.
+3. **Repo rename/swap** — process cwd can follow an inode into `_RustERP` while still serving the baked absolute static path.
+4. **Missing `rusterp-server.toml`** — deploy copies the example (127.0.0.1 only) if absent.
+5. **Orphan server** — if the binary is gone but something still listens on 8123/50051, kill via `ss -lntp` / `.local/rusterp-server.pid` and redeploy.
+
+WASM zstd siblings (`.wasm.zst` / `.js.zst` / `.html.zst`) are produced at deploy time; Caddy serves via `file_server { precompressed zstd }` (bind-mount `/srv/rusterp-ui`). `/rpc` stays reverse_proxy (uncompressed).
+
+Host Caddy / UFW: see `~/code/AGENTS.md` and skill `bilbo-dwp-caddy`.
 
 ## Build & verify
 

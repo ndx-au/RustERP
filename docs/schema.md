@@ -10,13 +10,13 @@ packages (`rusterp.<area>.v1`) and future `rusterp-*` crates. Migrations live in
 
 | PostgreSQL schema | Module id | MVP | Rust crate (current / planned) |
 |-------------------|-----------|-----|--------------------------------|
-| `core` | `core` | always-on | `rusterp-storage` |
-| `auth` | — | yes (schema only) | future auth crate |
+| `core` | `core` | always-on | `rusterp-storage` (+ `rusterp-auth` ModuleStore) |
+| `auth` | — | yes | `rusterp-auth` |
 | `party` | `parties` | yes | `rusterp-parties` |
-| `catalog` | `catalog` | yes | `rusterp-catalog` (planned) |
-| `sales` | `sales` | yes | `rusterp-sales` (planned) |
-| `payment` | `payments` | yes | `rusterp-payments` (planned) |
-| `inventory` | `inventory` | toggleable | `rusterp-inventory` (planned) |
+| `catalog` | `catalog` | yes | `rusterp-catalog` |
+| `sales` | `sales` | yes | `rusterp-sales` |
+| `payment` | `payments` | yes | `rusterp-payments` |
+| `inventory` | `inventory` | toggleable | `rusterp-inventory` |
 | `purchase` | — | stub | post-MVP |
 | `accounting` | — | stub | post-MVP (not full GL) |
 | `crm` | — | stub | post-MVP |
@@ -87,7 +87,7 @@ erDiagram
 - `catalog.products` — type: stock / service / consumable
 - `catalog.price_lists`, `catalog.prices`
 
-**Schema only** — no Rust repository yet.
+**Implemented:** `PostgresCatalogRepository` in `rusterp-catalog` (products + categories; UoM auto-seeded).
 
 ### `sales`
 
@@ -98,7 +98,7 @@ Unified document model: **quotes → orders → invoices + credit notes**.
 
 Statuses: `draft`, `confirmed`, `posted`, `cancelled`.
 
-**Schema only.**
+**Implemented:** `PostgresSalesRepository` in `rusterp-sales` (numbering via `core.document_sequences`).
 
 ### `payment`
 
@@ -106,7 +106,7 @@ Statuses: `draft`, `confirmed`, `posted`, `cancelled`.
 - `payment.payments` — inbound/outbound
 - `payment.payment_allocations` — payment ↔ invoice/credit note
 
-**Schema only.**
+**Implemented:** `PostgresPaymentsRepository` in `rusterp-payments`.
 
 ### `inventory` (toggleable)
 
@@ -114,7 +114,13 @@ Statuses: `draft`, `confirmed`, `posted`, `cancelled`.
 - `inventory.stock_levels` — on-hand + reserved qty
 - `inventory.stock_moves` — linked to sales documents
 
-**Schema only.**
+**Implemented:** `PostgresInventoryRepository` in `rusterp-inventory` (requires `core.modules` inventory enabled).
+
+### `auth`
+
+- `auth.users`, `auth.roles`, `auth.permissions` (+ groups / role bindings)
+
+**Implemented:** `PostgresAuthRepository` + `ModuleStore` in `rusterp-auth`. Soft enforcement via `RUSTERP_AUTH_ENFORCE=1` and `x-rusterp-user` metadata.
 
 ### Post-MVP stubs
 

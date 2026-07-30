@@ -1,0 +1,62 @@
+// Copyright 2026 NDX Pty Ltd and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package rusterp.inventory.v1;
+
+message Warehouse {
+  string id = 1;
+  string code = 2;
+  string name = 3;
+  bool active = 4;
+}
+
+message StockLevel {
+  string id = 1;
+  string warehouse_id = 2;
+  string product_id = 3;
+  string qty_on_hand = 4;
+  string qty_reserved = 5;
+}
+
+message StockMove {
+  string id = 1;
+  string product_id = 2;
+  string qty = 3;
+  optional string from_warehouse_id = 4;
+  optional string to_warehouse_id = 5;
+  string state = 6;
+}
+
+message CreateWarehouseRequest {
+  string code = 1;
+  string name = 2;
+}
+
+message ListWarehousesRequest {}
+message ListWarehousesResponse { repeated Warehouse warehouses = 1; }
+
+message ListStockLevelsRequest {
+  optional string warehouse_id = 1;
+}
+
+message ListStockLevelsResponse { repeated StockLevel levels = 1; }
+
+message CreateStockMoveRequest {
+  string product_id = 1;
+  string qty = 2;
+  optional string from_warehouse_id = 3;
+  optional string to_warehouse_id = 4;
+}
+
+message ListStockMovesRequest {}
+message ListStockMovesResponse { repeated StockMove moves = 1; }
+
+service InventoryService {
+  rpc CreateWarehouse(CreateWarehouseRequest) returns (Warehouse);
+  rpc ListWarehouses(ListWarehousesRequest) returns (ListWarehousesResponse);
+  rpc ListStockLevels(ListStockLevelsRequest) returns (ListStockLevelsResponse);
+  rpc CreateStockMove(CreateStockMoveRequest) returns (StockMove);
+  rpc ListStockMoves(ListStockMovesRequest) returns (ListStockMovesResponse);
+}

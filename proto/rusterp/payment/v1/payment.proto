@@ -1,0 +1,80 @@
+// Copyright 2026 NDX Pty Ltd and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package rusterp.payment.v1;
+
+enum PaymentDirection {
+  PAYMENT_DIRECTION_UNSPECIFIED = 0;
+  PAYMENT_DIRECTION_INBOUND = 1;
+  PAYMENT_DIRECTION_OUTBOUND = 2;
+}
+
+message BankAccount {
+  string id = 1;
+  string name = 2;
+  string currency = 3;
+  bool active = 4;
+}
+
+message Payment {
+  string id = 1;
+  PaymentDirection direction = 2;
+  string party_id = 3;
+  optional string bank_account_id = 4;
+  int64 amount_minor = 5;
+  string currency = 6;
+  string reference = 7;
+  string status = 8;
+}
+
+message PaymentAllocation {
+  string id = 1;
+  string payment_id = 2;
+  string document_id = 3;
+  int64 amount_minor = 4;
+}
+
+message CreateBankAccountRequest {
+  string name = 1;
+  string currency = 2;
+}
+
+message ListBankAccountsRequest {}
+message ListBankAccountsResponse { repeated BankAccount accounts = 1; }
+
+message CreatePaymentRequest {
+  PaymentDirection direction = 1;
+  string party_id = 2;
+  optional string bank_account_id = 3;
+  int64 amount_minor = 4;
+  string currency = 5;
+  string reference = 6;
+}
+
+message ListPaymentsRequest {}
+message ListPaymentsResponse { repeated Payment payments = 1; }
+
+message CreateAllocationRequest {
+  string payment_id = 1;
+  string document_id = 2;
+  int64 amount_minor = 3;
+}
+
+message ListAllocationsRequest {
+  string payment_id = 1;
+}
+
+message ListAllocationsResponse {
+  repeated PaymentAllocation allocations = 1;
+}
+
+service PaymentService {
+  rpc CreateBankAccount(CreateBankAccountRequest) returns (BankAccount);
+  rpc ListBankAccounts(ListBankAccountsRequest) returns (ListBankAccountsResponse);
+  rpc CreatePayment(CreatePaymentRequest) returns (Payment);
+  rpc ListPayments(ListPaymentsRequest) returns (ListPaymentsResponse);
+  rpc CreateAllocation(CreateAllocationRequest) returns (PaymentAllocation);
+  rpc ListAllocations(ListAllocationsRequest) returns (ListAllocationsResponse);
+}

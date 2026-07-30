@@ -15,6 +15,11 @@ path = "src/main.rs"
 [dependencies]
 async-trait = "0.1"
 rusterp-parties = { path = "../rusterp-parties" }
+rusterp-catalog = { path = "../rusterp-catalog" }
+rusterp-sales = { path = "../rusterp-sales" }
+rusterp-payments = { path = "../rusterp-payments" }
+rusterp-inventory = { path = "../rusterp-inventory" }
+rusterp-auth = { path = "../rusterp-auth" }
 rusterp-proto = { path = "../rusterp-proto" }
 rusterp-storage = { path = "../rusterp-storage" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
